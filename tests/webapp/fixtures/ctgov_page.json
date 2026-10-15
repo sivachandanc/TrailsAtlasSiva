@@ -1,0 +1,469 @@
+{
+ "totalCount": 873,
+ "studies": [
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT07326553",
+     "briefTitle": "Efficacy of Placental Membrane Dressings in Accelerating Diabetic Foot Healing"
+    },
+    "statusModule": {
+     "overallStatus": "RECRUITING",
+     "startDateStruct": {
+      "date": "2025-12-01"
+     },
+     "primaryCompletionDateStruct": {
+      "date": "2026-07-31"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-01-08"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "class": "INDUSTRY"
+     }
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Diabete Mellitus",
+      "Foot Ulcer Chronic"
+     ]
+    },
+    "designModule": {
+     "studyType": "INTERVENTIONAL",
+     "phases": [
+      "PHASE4"
+     ],
+     "designInfo": {
+      "primaryPurpose": "TREATMENT"
+     },
+     "enrollmentInfo": {
+      "count": 30
+     }
+    },
+    "armsInterventionsModule": {
+     "interventions": [
+      {
+       "type": "BIOLOGICAL"
+      }
+     ]
+    },
+    "eligibilityModule": {
+     "sex": "ALL",
+     "minimumAge": "45 Years",
+     "maximumAge": "85 Years",
+     "stdAges": [
+      "ADULT",
+      "OLDER_ADULT"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "facility": "Axsendo",
+       "status": "RECRUITING",
+       "city": "Phoenix",
+       "state": "Arizona",
+       "zip": "85024",
+       "country": "United States",
+       "geoPoint": {
+        "lat": 33.44838,
+        "lon": -112.07404
+       }
+      },
+      {
+       "facility": "Axsendo Clinical Research",
+       "status": "RECRUITING",
+       "city": "Houston",
+       "state": "Texas",
+       "zip": "77058",
+       "country": "United States",
+       "geoPoint": {
+        "lat": 29.76328,
+        "lon": -95.36327
+       }
+      }
+     ]
+    }
+   },
+   "derivedSection": {
+    "conditionBrowseModule": {
+     "meshes": [
+      {
+       "term": "Diabetes Mellitus"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT07196007",
+     "briefTitle": "Leveraging Community-clinical Linkages to Address Unmet Social Needs for People With Diabetes"
+    },
+    "statusModule": {
+     "overallStatus": "RECRUITING",
+     "startDateStruct": {
+      "date": "2026-03-10"
+     },
+     "primaryCompletionDateStruct": {
+      "date": "2027-03"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-03-27"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "class": "OTHER"
+     }
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Diabetes",
+      "Diabetes Mellitus"
+     ]
+    },
+    "designModule": {
+     "studyType": "INTERVENTIONAL",
+     "phases": [
+      "NA"
+     ],
+     "designInfo": {
+      "primaryPurpose": "HEALTH_SERVICES_RESEARCH"
+     },
+     "enrollmentInfo": {
+      "count": 12000
+     }
+    },
+    "armsInterventionsModule": {
+     "interventions": [
+      {
+       "type": "BEHAVIORAL"
+      }
+     ]
+    },
+    "eligibilityModule": {
+     "sex": "ALL",
+     "minimumAge": "18 Years",
+     "stdAges": [
+      "ADULT",
+      "OLDER_ADULT"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "facility": "University of Kentucky",
+       "status": "RECRUITING",
+       "city": "Lexington",
+       "state": "Kentucky",
+       "zip": "40506",
+       "country": "United States",
+       "geoPoint": {
+        "lat": 37.98869,
+        "lon": -84.47772
+       }
+      }
+     ]
+    }
+   },
+   "derivedSection": {
+    "conditionBrowseModule": {
+     "meshes": [
+      {
+       "term": "Diabetes Mellitus"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT06988306",
+     "briefTitle": "Lifestyle Interventions to Prevent Diabetes in U.S. Home Visiting Programs"
+    },
+    "statusModule": {
+     "overallStatus": "RECRUITING",
+     "startDateStruct": {
+      "date": "2026-01-15"
+     },
+     "primaryCompletionDateStruct": {
+      "date": "2030-04-30"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-03-05"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "class": "OTHER"
+     }
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Diabetes Mellitus",
+      "Gestational Diabetes Mellitus (GDM)"
+     ]
+    },
+    "designModule": {
+     "studyType": "INTERVENTIONAL",
+     "phases": [
+      "NA"
+     ],
+     "designInfo": {
+      "primaryPurpose": "PREVENTION"
+     },
+     "enrollmentInfo": {
+      "count": 978
+     }
+    },
+    "armsInterventionsModule": {
+     "interventions": [
+      {
+       "type": "BEHAVIORAL"
+      },
+      {
+       "type": "BEHAVIORAL"
+      }
+     ]
+    },
+    "eligibilityModule": {
+     "sex": "FEMALE",
+     "minimumAge": "18 Years",
+     "stdAges": [
+      "ADULT",
+      "OLDER_ADULT"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "facility": "California Polytechnic State University",
+       "status": "RECRUITING",
+       "city": "San Luis Obispo",
+       "state": "California",
+       "zip": "93401",
+       "country": "United States",
+       "geoPoint": {
+        "lat": 35.28275,
+        "lon": -120.65962
+       }
+      },
+      {
+       "facility": "Northwestern University",
+       "status": "NOT_YET_RECRUITING",
+       "city": "Chicago",
+       "state": "Illinois",
+       "zip": "60611",
+       "country": "United States",
+       "geoPoint": {
+        "lat": 41.85003,
+        "lon": -87.65005
+       }
+      },
+      {
+       "facility": "Miriam Hospital",
+       "status": "NOT_YET_RECRUITING",
+       "city": "Providence",
+       "state": "Rhode Island",
+       "zip": "02906",
+       "country": "United States",
+       "geoPoint": {
+        "lat": 41.82399,
+        "lon": -71.41283
+       }
+      }
+     ]
+    }
+   },
+   "derivedSection": {
+    "conditionBrowseModule": {
+     "meshes": [
+      {
+       "term": "Diabetes Mellitus"
+      },
+      {
+       "term": "Diabetes, Gestational"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT07006480",
+     "briefTitle": "Inpatient Use of Personal Continuous Glucose Monitor (CGM) to Improve Diabetes Mellitus Control"
+    },
+    "statusModule": {
+     "overallStatus": "RECRUITING",
+     "startDateStruct": {
+      "date": "2025-10-01"
+     },
+     "primaryCompletionDateStruct": {
+      "date": "2027-02-09"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-07-15"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "class": "OTHER"
+     }
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Diabetes Mellitus"
+     ]
+    },
+    "designModule": {
+     "studyType": "INTERVENTIONAL",
+     "phases": [
+      "NA"
+     ],
+     "designInfo": {
+      "primaryPurpose": "TREATMENT"
+     },
+     "enrollmentInfo": {
+      "count": 150
+     }
+    },
+    "armsInterventionsModule": {
+     "interventions": [
+      {
+       "type": "DEVICE"
+      },
+      {
+       "type": "DEVICE"
+      },
+      {
+       "type": "DEVICE"
+      }
+     ]
+    },
+    "eligibilityModule": {
+     "sex": "ALL",
+     "minimumAge": "18 Years",
+     "stdAges": [
+      "ADULT",
+      "OLDER_ADULT"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "facility": "Mayo Clinic in Florida",
+       "status": "RECRUITING",
+       "city": "Jacksonville",
+       "state": "Florida",
+       "zip": "32224",
+       "country": "United States",
+       "geoPoint": {
+        "lat": 30.33218,
+        "lon": -81.65565
+       }
+      }
+     ]
+    }
+   },
+   "derivedSection": {
+    "conditionBrowseModule": {
+     "meshes": [
+      {
+       "term": "Diabetes Mellitus"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "protocolSection": {
+    "identificationModule": {
+     "nctId": "NCT03648918",
+     "briefTitle": "Genetics Of Autoimmunity In Type I Diabetes"
+    },
+    "statusModule": {
+     "overallStatus": "RECRUITING",
+     "startDateStruct": {
+      "date": "2001-08"
+     },
+     "primaryCompletionDateStruct": {
+      "date": "2050-01"
+     },
+     "lastUpdatePostDateStruct": {
+      "date": "2026-03-16"
+     }
+    },
+    "sponsorCollaboratorsModule": {
+     "leadSponsor": {
+      "class": "OTHER"
+     }
+    },
+    "conditionsModule": {
+     "conditions": [
+      "Type1diabetes",
+      "Diabetes Mellitus, Type 1",
+      "Type1 Diabetes Mellitus",
+      "Diabetes Mellitus"
+     ]
+    },
+    "designModule": {
+     "studyType": "OBSERVATIONAL",
+     "designInfo": {},
+     "enrollmentInfo": {
+      "count": 4000
+     }
+    },
+    "armsInterventionsModule": {
+     "interventions": [
+      {
+       "type": "OTHER"
+      }
+     ]
+    },
+    "eligibilityModule": {
+     "sex": "ALL",
+     "minimumAge": "2 Years",
+     "stdAges": [
+      "CHILD",
+      "ADULT",
+      "OLDER_ADULT"
+     ]
+    },
+    "contactsLocationsModule": {
+     "locations": [
+      {
+       "facility": "Medical College of Wisconsin",
+       "status": "RECRUITING",
+       "city": "Milwaukee",
+       "state": "Wisconsin",
+       "zip": "53226",
+       "country": "United States",
+       "geoPoint": {
+        "lat": 43.0389,
+        "lon": -87.90647
+       }
+      }
+     ]
+    }
+   },
+   "derivedSection": {
+    "conditionBrowseModule": {
+     "meshes": [
+      {
+       "term": "Diabetes Mellitus, Type 1"
+      },
+      {
+       "term": "Diabetes Mellitus"
+      }
+     ]
+    }
+   }
+  }
+ ]
+}
