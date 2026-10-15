@@ -247,7 +247,7 @@ ul.questions strong { font-weight: 600; }
 
           <rect class="box" x="790" y="410" width="300" height="60" rx="8"/>
           <text class="t-mono" x="806" y="435">member_prescriptions</text>
-          <text class="t-sub" x="806" y="455">NDC, fill date, days supply</text>
+          <text class="t-sub" x="806" y="455">NDC, last fill date</text>
           <line class="edge" x1="790" y1="452" x2="712" y2="452" marker-end="url(#arrow)"/>
           <text class="edge-label" x="751" y="467" text-anchor="middle">NDC + dates</text>
 
@@ -280,14 +280,16 @@ ul.questions strong { font-weight: 600; }
         <tbody>
           <tr><td><code>studies</code></td><td>nct_id, titles, summaries, conditions, keywords, eligibility_criteria, sex, ages, healthy_volunteers, condition_mesh_ids, condition_mesh_terms, …</td><td>Trial side. One row per ClinicalTrials.gov trial with a US site.</td><td><span class="status built">Built</span></td></tr>
           <tr><td><code>trial_icd_codes</code></td><td>nct_id, source, source_value, match_type, cui, cui_name, icd_code, prefix</td><td>Trial side. One row per source → CUI → ICD code, so every prefix can be traced back to the MeSH pair or condition text it came from.</td><td><span class="status built">Built</span></td></tr>
-          <tr><td><code>members</code></td><td>member_id, birth_date, sex, zip, enrollment_start, enrollment_end</td><td>Sex normalized to MALE / FEMALE. Coverage dates tell "no code" apart from "not covered then".</td><td><span class="status planned">Needs data</span></td></tr>
-          <tr><td><code>member_diagnoses</code></td><td>member_id, code_system, icd_code, diagnosis_date, claim_id</td><td>From medical claims. Codes stored upper-case without the dot (O24113). <code>code_system</code> is ICD10CM or ICD9CM, because dot-free ICD-9 and ICD-10 codes can collide (E880.1 and E88.01 both become E8801).</td><td><span class="status planned">Needs data</span></td></tr>
-          <tr><td><code>member_prescriptions</code></td><td>member_id, ndc, fill_date, days_supply</td><td>From pharmacy claims. NDC normalized to 11 digits.</td><td><span class="status planned">Needs data</span></td></tr>
+          <tr><td><code>members</code></td><td>member_id, birth_date, sex</td><td>Sex normalized to MALE / FEMALE. Later, coverage dates (enrollment_start, enrollment_end) would tell "no code" apart from "not covered then".</td><td><span class="status planned">Needs data</span></td></tr>
+          <tr><td><code>member_diagnoses</code></td><td>member_id, code_system, icd_code, diagnosis_date</td><td>From medical claims, every date kept. Codes stored upper-case without the dot (O24113). <code>code_system</code> is ICD10CM or ICD9CM, because dot-free ICD-9 and ICD-10 codes can collide (E880.1 and E88.01 both become E8801).</td><td><span class="status planned">Needs data</span></td></tr>
+          <tr><td><code>member_prescriptions</code></td><td>member_id, ndc, last_fill_date</td><td>From pharmacy claims, most recent fill per NDC only. NDC normalized to 11 digits. Answers "filled in the last N days", not duration or new starts.</td><td><span class="status planned">Needs data</span></td></tr>
+          <tr><td><code>member_pharmacy_fills</code></td><td>member_id, ndc, fill_date, days_supply, quantity</td><td>Preferred replacement: every fill, which makes "stable dose for 3 months" and "started within 6 months" checkable.</td><td><span class="status planned">Preferred</span></td></tr>
           <tr><td><code>icd10cm_codes</code></td><td>code, description</td><td>Reference. Every valid ICD-10-CM code, used to reject invented codes.</td><td><span class="status planned">Planned</span></td></tr>
-          <tr><td><code>ndc_lookup</code></td><td>ndc, rxcui, ingredient, atc_class</td><td>Reference, built from RxNorm. The LLM names drugs; this table supplies the NDCs.</td><td><span class="status planned">Planned</span></td></tr>
+          <tr><td><code>ndc_lookup</code></td><td>ndc, ingredient_rxcui, atc_class</td><td>Reference, built from RxNorm. The LLM names drugs; this table supplies the NDCs.</td><td><span class="status planned">Planned</span></td></tr>
           <tr><td><code>member_labs</code>, <code>member_procedures</code></td><td>LOINC code, value, date · CPT code, date</td><td>Needed for criteria like HbA1c ≥ 48 mmol/mol or a nuchal translucency scan.</td><td><span class="status planned">Later</span></td></tr>
         </tbody>
       </table>
+      <p class="muted">The web app's <a href="http://127.0.0.1:8000/data-schema">Member data page</a> shows these tables with CREATE TABLE statements, from the same definitions the filter SQL uses.</p>
     </div>
   </section>
 

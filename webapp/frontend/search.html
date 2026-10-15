@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Search trials · Trial Atlas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header id="nav" class="nav"></header>
+
+  <main id="main" class="main">
+    <section id="start" class="start" hidden>
+      <h1>Search open trials by condition</h1>
+      <p class="muted">Type a condition in the search bar above, or start with one of these.</p>
+      <p class="examples">
+        <a href="/search?condition=diabetes">diabetes</a>
+        <a href="/search?condition=breast%20cancer">breast cancer</a>
+        <a href="/search?condition=obesity">obesity</a>
+        <a href="/search?condition=asthma">asthma</a>
+        <a href="/search?condition=alzheimer%20disease">Alzheimer's</a>
+      </p>
+    </section>
+
+    <section id="status" class="status-msg" aria-live="polite" hidden></section>
+
+    <div id="skeleton" class="dashboard skeleton" aria-hidden="true" hidden>
+      <div class="sk sk-title"></div>
+      <div class="kpis">
+        <div class="sk sk-kpi"></div><div class="sk sk-kpi"></div><div class="sk sk-kpi"></div>
+        <div class="sk sk-kpi"></div><div class="sk sk-kpi"></div><div class="sk sk-kpi"></div>
+      </div>
+      <div class="grid">
+        <div class="sk sk-panel span-8"></div><div class="sk sk-panel span-4"></div>
+      </div>
+    </div>
+
+    <div id="dashboard" class="dashboard" hidden>
+      <div class="result-head">
+        <div>
+          <h2 id="result-title"></h2>
+          <p id="result-note" class="muted"></p>
+        </div>
+        <button type="button" class="ghost" id="copy-link">Copy link</button>
+      </div>
+
+      <section class="kpis" id="kpis" aria-label="Key numbers"></section>
+
+      <div class="grid">
+        <section class="panel span-8" aria-labelledby="map-title">
+          <div class="panel-head">
+            <h3 id="map-title">Trials by state</h3>
+            <p class="muted">Select a state to filter the trial list.</p>
+          </div>
+          <div id="tile-map" class="tile-map" role="group" aria-label="Trials by state"></div>
+          <div id="map-legend" class="legend"></div>
+        </section>
+
+        <section class="panel span-4" aria-labelledby="cities-title">
+          <div class="panel-head"><h3 id="cities-title">Cities with the most trials</h3></div>
+          <div class="chart chart-tall" id="chart-cities"></div>
+        </section>
+
+        <section class="panel span-6" aria-labelledby="conditions-title">
+          <div class="panel-head">
+            <h3 id="conditions-title">Conditions studied</h3>
+            <p class="muted">MeSH terms assigned by NLM. A trial can count toward several.</p>
+          </div>
+          <div class="chart chart-tall" id="chart-conditions"></div>
+        </section>
+
+        <section class="panel span-3" aria-labelledby="phase-title">
+          <div class="panel-head"><h3 id="phase-title">Phase</h3></div>
+          <div class="chart" id="chart-phases"></div>
+        </section>
+
+        <section class="panel span-3" aria-labelledby="who-title">
+          <div class="panel-head"><h3 id="who-title">Who can join</h3></div>
+          <div class="chart chart-short" id="chart-sex"></div>
+          <div class="chart chart-short" id="chart-ages"></div>
+        </section>
+
+        <section class="panel span-8" aria-labelledby="timing-title">
+          <div class="panel-head">
+            <h3 id="timing-title">Timing</h3>
+            <p class="muted">Trial start dates over the last two years and next six months, and primary completions due in the next year.</p>
+          </div>
+          <div class="chart" id="chart-timing"></div>
+        </section>
+
+        <section class="panel span-4" aria-labelledby="design-title">
+          <div class="panel-head"><h3 id="design-title">What's being tested, and by whom</h3></div>
+          <div class="chart chart-short" id="chart-interventions"></div>
+          <div class="chart chart-short" id="chart-sponsors"></div>
+        </section>
+
+        <section class="panel span-12" aria-labelledby="table-title">
+          <div class="panel-head table-head">
+            <div>
+              <h3 id="table-title">Trials</h3>
+              <p class="muted" id="table-count"></p>
+            </div>
+            <div class="table-tools">
+              <span id="state-chip" class="chip" hidden></span>
+              <label class="visually-hidden" for="table-filter">Filter trials</label>
+              <input id="table-filter" type="search" placeholder="Filter by title, NCT ID or condition">
+            </div>
+          </div>
+          <div class="table-scroll" id="table-scroll">
+            <table class="trials">
+              <thead>
+                <tr>
+                  <th data-sort="id">NCT ID</th>
+                  <th data-sort="title" class="col-title">Title</th>
+                  <th data-sort="status">Status</th>
+                  <th data-sort="phase">Phase</th>
+                  <th>Conditions</th>
+                  <th data-sort="open_us_sites" class="num">Open US sites</th>
+                  <th>States</th>
+                  <th data-sort="enrollment" class="num">Enrollment</th>
+                  <th data-sort="start_date">Start</th>
+                  <th data-sort="primary_completion_date">Primary completion</th>
+                </tr>
+              </thead>
+              <tbody id="table-body"></tbody>
+            </table>
+            <div id="table-sentinel" class="sentinel"></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="/us_tiles.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/search.js"></script>
+</body>
+</html>

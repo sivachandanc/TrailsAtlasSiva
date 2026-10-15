@@ -1,0 +1,749 @@
+<title>AI Pharmacist Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column; three wide diagrams in scroll boxes; reference tables in pipeline order. Trial Atlas tokens. */
+:root {
+  --bg: #f2f5f9; --surface: #ffffff; --ink: #0e1a2b; --muted: #5b6b80; --line: #dde4ee;
+  --accent: #3347c4; --accent-soft: #e6e9fb; --second: #0f9e8e; --second-soft: #dcf3f0;
+  --go: #137a52; --go-soft: #dcf2e8; --soon: #8a5a00; --soon-soft: #f8ecd2; --err: #a23232; --err-soft: #f9e3e3;
+  --boundary: #b4560f; --boundary-soft: #fbefe5; --code-bg: #eef2f7;
+  --font: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1420; --surface: #141d2c; --ink: #e6ebf3; --muted: #93a1b5; --line: #253246;
+    --accent: #8b9cf5; --accent-soft: #1f2a4a; --second: #4cc7b7; --second-soft: #12302d;
+    --go: #5fd3a1; --go-soft: #123527; --soon: #f0c06a; --soon-soft: #3a2c10; --err: #f19a9a; --err-soft: #3a1919;
+    --boundary: #e69a5a; --boundary-soft: #2a1e15; --code-bg: #1a2436; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1420; --surface: #141d2c; --ink: #e6ebf3; --muted: #93a1b5; --line: #253246;
+  --accent: #8b9cf5; --accent-soft: #1f2a4a; --second: #4cc7b7; --second-soft: #12302d;
+  --go: #5fd3a1; --go-soft: #123527; --soon: #f0c06a; --soon-soft: #3a2c10; --err: #f19a9a; --err-soft: #3a1919;
+  --boundary: #e69a5a; --boundary-soft: #2a1e15; --code-bg: #1a2436; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 400 16px/1.6 var(--font); }
+.page { max-width: 1180px; margin: 0 auto; padding: 40px 20px 80px; display: grid; gap: 52px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; line-height: 1.15; }
+h1 { font-size: clamp(2rem, 4.4vw, 3rem); font-weight: 800; letter-spacing: -0.03em; }
+h2 { font-size: 1.45rem; font-weight: 800; letter-spacing: -0.01em; }
+h3 { font-size: 1.05rem; font-weight: 700; }
+p { margin: 0; }
+.prose { max-width: 72ch; display: grid; gap: 10px; }
+.muted { color: var(--muted); }
+.lede { font-size: 1.1rem; color: var(--muted); max-width: 70ch; }
+header { display: grid; gap: 14px; }
+.eyebrow { font-weight: 700; font-size: 0.8rem; letter-spacing: 0.08em; color: var(--accent); }
+section { display: grid; gap: 16px; min-width: 0; }
+code, .mono { font-family: var(--mono); font-size: 0.86em; }
+:not(pre) > code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; }
+pre { margin: 0; background: var(--code-bg); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font: 400 0.82rem/1.55 var(--mono); }
+a { color: var(--accent); }
+
+figure { margin: 0; display: grid; gap: 10px; min-width: 0; }
+.diagram { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.diagram svg { display: block; width: 100%; height: auto; min-width: 960px; color: var(--muted); }
+figcaption { color: var(--muted); font-size: 0.95rem; max-width: 85ch; }
+/* SVG parts */
+.lane { fill: none; stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 5 5; }
+.lane-label { font: 700 11px var(--font); letter-spacing: 0.08em; fill: var(--muted); }
+.box { fill: var(--surface); stroke: var(--line); stroke-width: 1.3; }
+.box-accent { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+.box-second { fill: var(--second-soft); stroke: var(--second); stroke-width: 1.4; }
+.box-ext { fill: var(--boundary-soft); stroke: var(--boundary); stroke-width: 1.4; }
+.box-err { fill: var(--err-soft); stroke: var(--err); stroke-width: 1.3; }
+.box-go { fill: var(--go-soft); stroke: var(--go); stroke-width: 1.3; }
+.boundary { fill: none; stroke: var(--boundary); stroke-width: 1.8; stroke-dasharray: 7 5; }
+.t { font: 700 13px var(--font); fill: var(--ink); }
+.ts { font: 400 11.5px var(--font); fill: var(--muted); }
+.tm { font: 500 11px var(--mono); fill: var(--ink); }
+.tb { font: 700 11px var(--font); fill: var(--boundary); letter-spacing: 0.06em; }
+.edge { stroke: currentColor; stroke-width: 1.4; fill: none; }
+.edge-accent { stroke: var(--accent); stroke-width: 1.8; fill: none; }
+.edge-err { stroke: var(--err); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+.el { font: 500 11px var(--font); fill: var(--ink); paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+
+ol.steps { margin: 0; padding: 0; list-style: none; counter-reset: s; display: grid; gap: 12px; max-width: 85ch; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 2.2rem 1fr; gap: 2px 12px; }
+ol.steps li::before { content: counter(s); grid-row: span 2; width: 28px; height: 28px; border-radius: 50%; display: grid; place-content: center; background: var(--accent-soft); color: var(--accent); font-weight: 800; font-size: 0.9rem; }
+ol.steps li > span { color: var(--muted); }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+td:first-child { white-space: nowrap; font-weight: 600; }
+.pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-weight: 700; font-size: 0.78rem; white-space: nowrap; }
+.p-go { background: var(--go-soft); color: var(--go); } .p-soon { background: var(--soon-soft); color: var(--soon); }
+.p-err { background: var(--err-soft); color: var(--err); } .p-mut { background: var(--code-bg); color: var(--muted); }
+.p-acc { background: var(--accent-soft); color: var(--accent); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.grid-2 > * { min-width: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; display: grid; gap: 8px; align-content: start; }
+.note { border-left: 4px solid var(--boundary); background: var(--boundary-soft); padding: 12px 16px; border-radius: 0 10px 10px 0; max-width: 85ch; }
+.read { border-left: 4px solid var(--second); background: var(--second-soft); padding: 14px 18px; border-radius: 0 10px 10px 0; display: grid; gap: 8px; max-width: 90ch; }
+.read ol, .read ul { margin: 0; padding-left: 1.2rem; display: grid; gap: 6px; }
+.bar { stroke-width: 0; } .bar-go { fill: var(--accent); } .bar-approx { fill: var(--soon-soft); stroke: var(--soon); stroke-width: 1.6; stroke-dasharray: 6 4; }
+.halo text { paint-order: stroke; stroke: var(--surface); stroke-width: 5px; stroke-linejoin: round; }
+.axis { stroke: var(--ink); stroke-width: 1.4; }
+.tick { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; }
+.today { stroke: var(--go); stroke-width: 2; }
+dl.gloss { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 8px 18px; max-width: 90ch; }
+dl.gloss dt { font-weight: 700; } dl.gloss dd { margin: 0; color: var(--muted); }
+@media (max-width: 600px) { dl.gloss { grid-template-columns: 1fr; gap: 2px; } dl.gloss dd { margin-bottom: 8px; } }
+.rec { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 14px 18px; border-radius: 0 10px 10px 0; display: grid; gap: 8px; max-width: 90ch; }
+@media (max-width: 600px) { .page { padding-top: 28px; gap: 40px; } td:first-child { white-space: normal; } }
+</style>
+
+<div class="page">
+  <header>
+    <p class="eyebrow">TRIAL ATLAS · ELIGIBILITY BUILDER · STEP 3</p>
+    <h1>AI Pharmacist Architecture</h1>
+    <p class="lede">How step 3 turns a trial's free-text eligibility criteria into checked filters on claims data: a LangGraph agent on Claude Opus 5.5 reads the text and looks up real codes and drugs, then plain code verifies everything it said before any of it becomes SQL.</p>
+  </header>
+
+  <section>
+    <h2>The idea in plain words</h2>
+    <div class="prose">
+      <p>A trial's eligibility criteria are written for doctors: “diagnosed with gestational diabetes during this pregnancy, not pre-existing diabetes, no gastric bypass, able to give consent”. Our member data is claims: diagnosis codes with dates, and the last date each drug was filled. Step 3 translates one into the other.</p>
+      <p>It works in two halves. <strong>An AI does the reading.</strong> Claude, told to act like a clinical pharmacist and coder, splits the criteria into single rules and, for each one, looks up the real ICD-10-CM codes or drugs and says how recent they must be. It isn't allowed to remember codes; it must find them with lookup tools. <strong>Plain code does the checking.</strong> Every quote must really be in the criteria, every code must exist, every drug must resolve to NDCs, and only then is SQL written. Anything claims can't answer (lab values, language, consent) is kept and shown as “needs review”, never guessed.</p>
+      <p>Nothing about members ever goes to the AI. It sees the trial's public text and the names of our tables, nothing more.</p>
+    </div>
+    <div class="read">
+      <strong>Example: the gestational diabetes trial (NCT05909046), run live on 14 Oct 2026</strong>
+      <ul>
+        <li>“Diagnosed with GDM during pregnancy” became <em>must have O24.4, dated in the last 365 days</em>. “During pregnancy” is approximated as the last year and marked for a reviewer to confirm.</li>
+        <li>“(NOT pregestational diabetes)” became two must-not-have rules: <em>O24.0, O24.1, O24.3, O24.8 in the last year</em> and <em>E10, E11, E13 dated at least a year ago</em>, i.e. diabetes before the pregnancy.</li>
+        <li>“History of gastric bypass” became <em>must not have Z98.84, O99.84 or K95, any time</em>.</li>
+        <li>Glucose test results, language, consent and “care at OSU” went to needs review, each with a reason.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= Diagram 1: system ================= -->
+  <section>
+    <h2>The whole system</h2>
+    <div class="read">
+      <strong>How to read it</strong>
+      <p>Four columns, left to right: what the coordinator sees, our server, the AI agent, and the outside services it calls. Follow the blue arrows: the click starts a run, the server gathers the trial's text, the agent talks to Claude and calls the lookup services, and progress streams back to the page while it works. The orange dashed box is the privacy line; only trial text and lookups cross it.</p>
+    </div>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 1180 640" role="img" aria-label="System diagram: the browser starts a run on the FastAPI backend, which checks guards, builds the trial context and runs the LangGraph agent. The agent talks to Claude Opus 5.5 and calls UMLS and RxNorm tools. Progress streams back to the browser; the final result is cached in memory. Only trial text and lookup results cross into external services.">
+          <defs>
+            <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+            <marker id="a1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+          </defs>
+
+          <!-- lanes -->
+          <rect class="lane" x="10" y="14" width="200" height="612" rx="12"/>
+          <text class="lane-label" x="24" y="36">BROWSER</text>
+          <rect class="lane" x="226" y="14" width="250" height="612" rx="12"/>
+          <text class="lane-label" x="240" y="36">FASTAPI BACKEND</text>
+          <rect class="lane" x="492" y="14" width="330" height="612" rx="12"/>
+          <text class="lane-label" x="506" y="36">LANGGRAPH AGENT</text>
+          <rect class="boundary" x="840" y="14" width="330" height="612" rx="12"/>
+          <text class="tb" x="856" y="36">OUTSIDE SERVICES · TRIAL TEXT ONLY</text>
+
+          <!-- browser -->
+          <rect class="box box-accent" x="24" y="60" width="172" height="78" rx="9"/>
+          <text class="t" x="36" y="84">Step 3 page</text>
+          <text class="ts" x="36" y="103">“Build with AI</text>
+          <text class="ts" x="36" y="119">pharmacist” button</text>
+
+          <rect class="box" x="24" y="290" width="172" height="92" rx="9"/>
+          <text class="t" x="36" y="314">Activity feed</text>
+          <text class="ts" x="36" y="333">notes, each lookup</text>
+          <text class="ts" x="36" y="349">and what it returned,</text>
+          <text class="ts" x="36" y="365">live</text>
+
+          <rect class="box box-go" x="24" y="480" width="172" height="120" rx="9"/>
+          <text class="t" x="36" y="504">Result cards</text>
+          <text class="ts" x="36" y="523">checked from claims</text>
+          <text class="ts" x="36" y="539">needs review</text>
+          <text class="ts" x="36" y="555">covered by steps 1–2</text>
+          <text class="ts" x="36" y="571">flagged</text>
+          <text class="ts" x="36" y="587">+ SQL, JSON, tool log</text>
+
+          <!-- backend -->
+          <rect class="box" x="240" y="60" width="222" height="126" rx="9"/>
+          <text class="t" x="252" y="84">POST /criteria/run</text>
+          <text class="ts" x="252" y="104">trial exists (404)</text>
+          <text class="ts" x="252" y="120">has criteria text (422)</text>
+          <text class="ts" x="252" y="136">not already running (409)</text>
+          <text class="ts" x="252" y="152">Anthropic key set (503)</text>
+          <text class="ts" x="252" y="172">GET /criteria → cached result</text>
+
+          <rect class="box" x="240" y="206" width="222" height="160" rx="9"/>
+          <text class="t" x="252" y="230">Context builder</text>
+          <text class="ts" x="252" y="250">criteria text (only rule source)</text>
+          <text class="ts" x="252" y="266">background: titles, summary,</text>
+          <text class="ts" x="252" y="282">  interventions, arms, conditions</text>
+          <text class="ts" x="252" y="298">study population</text>
+          <text class="ts" x="252" y="314">step 1 prefixes, step 2 rules</text>
+          <text class="ts" x="252" y="330">member table schema (names only)</text>
+          <text class="ts" x="252" y="350">from the cached trial record</text>
+
+          <rect class="box" x="240" y="390" width="222" height="70" rx="9"/>
+          <text class="t" x="252" y="414">SSE stream</text>
+          <text class="ts" x="252" y="433">status · note · tool_call ·</text>
+          <text class="ts" x="252" y="449">tool_result · submitting · done</text>
+
+          <rect class="box" x="240" y="480" width="222" height="70" rx="9"/>
+          <text class="t" x="252" y="504">Result cache</text>
+          <text class="ts" x="252" y="523">in memory, 24 hours,</text>
+          <text class="ts" x="252" y="539">per trial; nothing on disk</text>
+
+          <!-- graph -->
+          <rect class="box box-accent" x="506" y="60" width="302" height="300" rx="9"/>
+          <text class="t" x="520" y="84">criteria graph</text>
+          <text class="ts" x="520" y="104">prepare: system prompt + member schema</text>
+          <text class="ts" x="520" y="120">  (cached), trial context as user message</text>
+          <text class="ts" x="520" y="144">pharmacist: Claude Opus 5.5 with</text>
+          <text class="ts" x="520" y="160">  5 lookup tools + submit_criteria</text>
+          <text class="ts" x="520" y="184">tools: LangGraph ToolNode, runs calls</text>
+          <text class="ts" x="520" y="200">  in parallel, errors go back to model</text>
+          <text class="ts" x="520" y="224">loop until submit_criteria is accepted</text>
+          <text class="ts" x="520" y="240">  (≤100 graph steps)</text>
+          <text class="ts" x="520" y="264">remind once if it answers in text</text>
+          <text class="ts" x="520" y="288">collect → finalize</text>
+          <text class="ts" x="520" y="312">  (no AI: verify, expand, write SQL)</text>
+          <text class="ts" x="520" y="338">See the next two diagrams.</text>
+
+          <rect class="box box-second" x="506" y="390" width="302" height="160" rx="9"/>
+          <text class="t" x="520" y="414">finalize (deterministic)</text>
+          <text class="ts" x="520" y="434">quote is really in the text</text>
+          <text class="ts" x="520" y="450">every ICD code exists</text>
+          <text class="ts" x="520" y="466">drugs resolve; expand to NDCs</text>
+          <text class="ts" x="520" y="482">group each rule</text>
+          <text class="ts" x="520" y="498">SQL per rule + combined SQL</text>
+          <text class="ts" x="520" y="514">tool log, notes, token usage</text>
+          <text class="ts" x="520" y="536">→ CriteriaFilter</text>
+
+          <!-- external -->
+          <rect class="box box-ext" x="856" y="60" width="298" height="126" rx="9"/>
+          <text class="t" x="868" y="84">Anthropic API</text>
+          <text class="tm" x="868" y="104">claude-opus-5-5</text>
+          <text class="ts" x="868" y="124">adaptive thinking, effort high</text>
+          <text class="ts" x="868" y="140">progress notes between tool calls</text>
+          <text class="ts" x="868" y="156">fallback model on a refusal</text>
+          <text class="ts" x="868" y="172">streamed; max 32k output tokens</text>
+
+          <rect class="box box-ext" x="856" y="216" width="298" height="120" rx="9"/>
+          <text class="t" x="868" y="240">UMLS (NLM)</text>
+          <text class="ts" x="868" y="260">search ICD-10-CM by words</text>
+          <text class="ts" x="868" y="276">check a code / list children</text>
+          <text class="ts" x="868" y="292">UMLS_API_KEY, cached 24 h,</text>
+          <text class="ts" x="868" y="308">≤8 requests at a time</text>
+          <text class="ts" x="868" y="324">used by tools and by finalize</text>
+
+          <rect class="box box-ext" x="856" y="366" width="298" height="136" rx="9"/>
+          <text class="t" x="868" y="390">RxNav / RxClass (NLM)</text>
+          <text class="ts" x="868" y="410">drug name → RxCUI → ingredients</text>
+          <text class="ts" x="868" y="426">ingredient → ATC classes</text>
+          <text class="ts" x="868" y="442">ATC class → member ingredients</text>
+          <text class="ts" x="868" y="458">ingredient → products → NDCs</text>
+          <text class="ts" x="868" y="474">no key, cached 24 h</text>
+          <text class="ts" x="868" y="490">used by tools and by finalize</text>
+
+          <rect class="box" x="856" y="532" width="298" height="70" rx="9"/>
+          <text class="t" x="868" y="556">ClinicalTrials.gov API</text>
+          <text class="ts" x="868" y="575">the trial record (already loaded</text>
+          <text class="ts" x="868" y="591">for the trial page, cached)</text>
+
+          <!-- edges -->
+          <line class="edge-accent" x1="196" y1="99" x2="238" y2="99" marker-end="url(#a1b)"/>
+          <text class="el" x="217" y="92" text-anchor="middle">click</text>
+          <line class="edge" x1="351" y1="186" x2="351" y2="204" marker-end="url(#a1)"/>
+          <line class="edge-accent" x1="462" y1="260" x2="504" y2="200" marker-end="url(#a1b)"/>
+          <text class="el" x="483" y="244" text-anchor="middle">context</text>
+          <path class="edge-accent" d="M808,110 L854,110" marker-end="url(#a1b)"/>
+          <path class="edge-accent" d="M854,132 L810,132" marker-end="url(#a1b)"/>
+          <text class="el" x="831" y="102" text-anchor="middle">prompt</text>
+          <text class="el" x="831" y="146" text-anchor="middle">reply</text>
+          <path class="edge" d="M808,200 L830,200 L830,270 L854,270" marker-end="url(#a1)"/>
+          <path class="edge" d="M808,214 L824,214 L824,420 L854,420" marker-end="url(#a1)"/>
+          <text class="el" x="826" y="305" text-anchor="middle">tool calls</text>
+          <path class="edge" d="M808,470 L846,470 L846,300 L854,300" marker-end="url(#a1)"/>
+          <path class="edge" d="M808,490 L854,490" marker-end="url(#a1)"/>
+          <text class="el" x="832" y="520" text-anchor="middle">verify</text>
+          <line class="edge" x1="657" y1="360" x2="657" y2="388" marker-end="url(#a1)"/>
+          <path class="edge" d="M506,330 L478,330 L478,424 L464,424" marker-end="url(#a1)"/>
+          <text class="el" x="486" y="380" text-anchor="middle">updates</text>
+          <line class="edge" x1="240" y1="425" x2="198" y2="350" marker-end="url(#a1)"/>
+          <text class="el" x="219" y="400" text-anchor="middle">SSE</text>
+          <path class="edge" d="M506,520 L464,520" marker-end="url(#a1)"/>
+          <text class="el" x="485" y="512" text-anchor="middle">result</text>
+          <line class="edge" x1="240" y1="530" x2="198" y2="540" marker-end="url(#a1)"/>
+          <text class="el" x="219" y="560" text-anchor="middle">done</text>
+          <path class="edge" d="M856,567 L478,567 L478,560 L470,560" marker-end="url(#a1)"/>
+          <text class="el" x="660" y="578" text-anchor="middle">trial record</text>
+        </svg>
+      </div>
+      <figcaption>Blue arrows carry the model's work: the click, the context and the conversation with Claude. The orange dashed boundary is the privacy line: only the trial's published text and the results of terminology lookups ever leave the backend. No member data goes to any outside service, and nothing is written to disk.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= Diagram 2: the graph ================= -->
+  <section>
+    <h2>Inside the LangGraph loop</h2>
+    <div class="read">
+      <strong>How to read it</strong>
+      <p>This is the agent's loop. Claude takes a turn (the blue box) and either asks for lookups, which run and come back to it, or hands in its final answer through <code>submit_criteria</code>. It goes round as many times as it needs, typically 2–4 turns and about 10 lookups. The red paths are the ways a run can fail, and each ends with a clear message instead of a half-built filter.</p>
+    </div>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 1100 520" role="img" aria-label="State machine: START to prepare to pharmacist. Pharmacist sends tool calls to tools, which return results to pharmacist. A plain-text answer goes to remind once and back to pharmacist; a second goes to gave_up and ends with an error. A refusal or cut-off answer ends with an error. When submit_criteria is accepted, tools route to collect, then finalize, then END.">
+          <defs>
+            <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+            <marker id="a2b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+            <marker id="a2r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--err)"/></marker>
+          </defs>
+          <circle cx="44" cy="250" r="18" class="box"/><text class="ts" x="44" y="254" text-anchor="middle">START</text>
+          <line class="edge" x1="62" y1="250" x2="98" y2="250" marker-end="url(#a2)"/>
+
+          <rect class="box" x="100" y="206" width="170" height="88" rx="9"/>
+          <text class="t" x="114" y="230">prepare</text>
+          <text class="ts" x="114" y="249">system prompt + cache</text>
+          <text class="ts" x="114" y="265">trial context message</text>
+          <text class="ts" x="114" y="281">reminders = 0</text>
+          <line class="edge" x1="270" y1="250" x2="338" y2="250" marker-end="url(#a2)"/>
+
+          <rect class="box box-accent" x="340" y="200" width="210" height="100" rx="9"/>
+          <text class="t" x="354" y="224">pharmacist</text>
+          <text class="tm" x="354" y="244">bind_tools(auto)</text>
+          <text class="ts" x="354" y="263">one Claude turn: notes,</text>
+          <text class="ts" x="354" y="279">tool calls, or text</text>
+
+          <rect class="box" x="340" y="40" width="210" height="96" rx="9"/>
+          <text class="t" x="354" y="64">tools (ToolNode)</text>
+          <text class="ts" x="354" y="83">runs all calls of a turn</text>
+          <text class="ts" x="354" y="99">in parallel; bad input or</text>
+          <text class="ts" x="354" y="115">failures return as errors</text>
+
+          <path class="edge-accent" d="M410,200 L410,138" marker-end="url(#a2b)"/>
+          <path class="edge-accent" d="M480,138 L480,198" marker-end="url(#a2b)"/>
+          <text class="el" x="404" y="172" text-anchor="end">tool calls</text>
+          <text class="el" x="486" y="172">results</text>
+
+          <rect class="box" x="340" y="380" width="210" height="70" rx="9"/>
+          <text class="t" x="354" y="404">remind</text>
+          <text class="ts" x="354" y="423">“Please finish by calling</text>
+          <text class="ts" x="354" y="439">submit_criteria”</text>
+          <path class="edge" d="M400,300 L400,378" marker-end="url(#a2)"/>
+          <path class="edge" d="M490,378 L490,302" marker-end="url(#a2)"/>
+          <text class="el" x="394" y="345" text-anchor="end">text, 1st time</text>
+
+          <rect class="box box-err" x="620" y="380" width="190" height="70" rx="9"/>
+          <text class="t" x="634" y="404">gave_up</text>
+          <text class="ts" x="634" y="423">“answered in text twice</text>
+          <text class="ts" x="634" y="439">instead of submitting”</text>
+          <path class="edge-err" d="M550,280 L585,280 L585,415 L618,415" marker-end="url(#a2r)"/>
+          <text class="el" x="590" y="356">text again</text>
+
+          <rect class="box box-err" x="620" y="220" width="190" height="78" rx="9"/>
+          <text class="t" x="634" y="244">stop with an error</text>
+          <text class="ts" x="634" y="263">refusal (after fallback)</text>
+          <text class="ts" x="634" y="279">or answer cut off</text>
+          <path class="edge-err" d="M550,240 L618,240" marker-end="url(#a2r)"/>
+
+          <rect class="box box-go" x="620" y="40" width="160" height="70" rx="9"/>
+          <text class="t" x="634" y="64">collect</text>
+          <text class="ts" x="634" y="83">take the accepted</text>
+          <text class="ts" x="634" y="99">submit_criteria args</text>
+          <path class="edge" d="M550,72 L618,72" marker-end="url(#a2)"/>
+          <text class="el" x="584" y="64" text-anchor="middle">submitted</text>
+
+          <rect class="box box-second" x="840" y="40" width="200" height="96" rx="9"/>
+          <text class="t" x="854" y="64">finalize</text>
+          <text class="ts" x="854" y="83">verify, expand NDCs,</text>
+          <text class="ts" x="854" y="99">group, write SQL</text>
+          <text class="ts" x="854" y="115">(next diagram)</text>
+          <path class="edge" d="M780,72 L838,72" marker-end="url(#a2)"/>
+
+          <circle cx="940" cy="250" r="20" class="box"/><text class="ts" x="940" y="254" text-anchor="middle">END</text>
+          <path class="edge" d="M940,136 L940,228" marker-end="url(#a2)"/>
+          <path class="edge-err" d="M810,259 L918,252" marker-end="url(#a2r)"/>
+          <path class="edge-err" d="M810,415 L940,415 L940,272" marker-end="url(#a2r)"/>
+
+          <text class="ts" x="100" y="490">Guard: the whole graph runs with recursion_limit = 100 (about 45 rounds of lookups). Hitting it ends the run with “used too many lookups”.</text>
+          <text class="ts" x="100" y="508">State: context · messages (add_messages) · reminders · submitted · error · result. No checkpointer, so nothing is persisted.</text>
+        </svg>
+      </div>
+      <figcaption>The model decides what to look up and when it's done; the graph decides what happens next. A malformed submission doesn't end the run: the ToolNode returns the validation error as a tool result and the model fixes it on its next turn. Forced tool choice isn't available on Claude Opus 5.5, which is why a text-only answer gets one reminder instead.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= Diagram 3: finalize ================= -->
+  <section>
+    <h2>After the agent submits: what gets verified</h2>
+    <div class="read">
+      <strong>How to read it</strong>
+      <p>No AI from here on. Read the top row left to right: each submitted rule passes through four checks in order, then the bottom row turns the survivors into SQL and the final result. Think of the agent's answer as a draft and this row as the editor: a made-up code is struck out, a quote that isn't in the trial is flagged, and only rules that pass everything are applied to members.</p>
+    </div>
+    <figure>
+      <div class="diagram">
+        <svg viewBox="0 0 1100 330" role="img" aria-label="Finalize pipeline: submitted rules go through quote check, ICD code check against UMLS, drug resolution and NDC expansion through RxNav, then grouping and SQL writing, producing the CriteriaFilter result.">
+          <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+          <rect class="box box-accent" x="16" y="30" width="180" height="120" rx="9"/>
+          <text class="t" x="30" y="54">Submitted rules</text>
+          <text class="ts" x="30" y="74">quote, section,</text>
+          <text class="ts" x="30" y="90">must / must not,</text>
+          <text class="ts" x="30" y="106">type, codable, codes,</text>
+          <text class="ts" x="30" y="122">drugs, window, why</text>
+          <line class="edge" x1="196" y1="90" x2="226" y2="90" marker-end="url(#a3)"/>
+
+          <rect class="box" x="228" y="30" width="190" height="120" rx="9"/>
+          <text class="t" x="242" y="54">1 Quote check</text>
+          <text class="ts" x="242" y="74">normalized text contains</text>
+          <text class="ts" x="242" y="90">the quote, or ≥90% of</text>
+          <text class="ts" x="242" y="106">its words (4+ words)</text>
+          <text class="ts" x="242" y="128">miss → flagged</text>
+          <line class="edge" x1="418" y1="90" x2="448" y2="90" marker-end="url(#a3)"/>
+
+          <rect class="box" x="450" y="30" width="190" height="120" rx="9"/>
+          <text class="t" x="464" y="54">2 ICD codes</text>
+          <text class="ts" x="464" y="74">each code looked up in</text>
+          <text class="ts" x="464" y="90">UMLS ICD-10-CM</text>
+          <text class="ts" x="464" y="106">invented → struck out,</text>
+          <text class="ts" x="464" y="122">left out of the SQL</text>
+          <line class="edge" x1="640" y1="90" x2="670" y2="90" marker-end="url(#a3)"/>
+
+          <rect class="box" x="672" y="30" width="200" height="120" rx="9"/>
+          <text class="t" x="686" y="54">3 Drugs → NDCs</text>
+          <text class="ts" x="686" y="74">RxCUI → ingredient, or</text>
+          <text class="ts" x="686" y="90">ATC class → members;</text>
+          <text class="ts" x="686" y="106">each → SCD/SBD/GPCK/BPCK</text>
+          <text class="ts" x="686" y="122">products → NDCs (≤80 per)</text>
+          <line class="edge" x1="872" y1="90" x2="902" y2="90" marker-end="url(#a3)"/>
+
+          <rect class="box" x="904" y="30" width="180" height="120" rx="9"/>
+          <text class="t" x="918" y="54">4 Group</text>
+          <text class="ts" x="918" y="74">covered → step 1 / 2</text>
+          <text class="ts" x="918" y="90">failed check → flagged</text>
+          <text class="ts" x="918" y="106">not codable, open event</text>
+          <text class="ts" x="918" y="122">or drug duration → review</text>
+          <text class="ts" x="918" y="138">else → codable (~ if approx.)</text>
+          <path class="edge" d="M994,150 L994,190 L860,190 L860,206" marker-end="url(#a3)"/>
+
+          <rect class="box" x="560" y="208" width="300" height="104" rx="9"/>
+          <text class="t" x="574" y="232">5 SQL</text>
+          <text class="ts" x="574" y="252">diagnosis: member_diagnoses, LIKE prefix%</text>
+          <text class="ts" x="574" y="268">medication: prescriptions ⨝ ndc_lookup</text>
+          <text class="ts" x="574" y="284">window → date ≥ today − max, date ≤ today − min</text>
+          <text class="ts" x="574" y="300">must have → IN, must not have → NOT IN</text>
+          <line class="edge" x1="560" y1="260" x2="460" y2="260" marker-end="url(#a3)"/>
+
+          <rect class="box box-go" x="160" y="208" width="298" height="104" rx="9"/>
+          <text class="t" x="174" y="232">CriteriaFilter</text>
+          <text class="ts" x="174" y="252">rules (with group, codes, drugs, NDC counts,</text>
+          <text class="ts" x="174" y="268">window text, problems, backing tool calls, SQL)</text>
+          <text class="ts" x="174" y="284">combined SQL (codable rules only), JSON,</text>
+          <text class="ts" x="174" y="300">tool log, progress notes, token usage</text>
+        </svg>
+      </div>
+      <figcaption>This half has no AI in it. The model's claims are treated as proposals: a code only reaches the SQL after UMLS confirms it exists, a drug only after RxNorm resolves it, and a rule only counts if its quote is really in the trial's text. Each rule also lists which of the agent's lookups returned its codes, so a reviewer can trace it.</figcaption>
+    </figure>
+  </section>
+
+  <!-- ================= Diagram 4: time windows ================= -->
+  <section>
+    <h2>Time windows, explained</h2>
+    <div class="prose">
+      <p>Most criteria say <em>when</em> something must have happened: “in the past 3 months”, “diagnosed at least 6 months ago”, “12 to 24 months postpartum”, “during this pregnancy”. Every one of these is stored the same way, as a range of days counted back from today: <code>max_days_ago</code> (no older than) and <code>min_days_ago</code> (no newer than). Either end can be open. The agent only describes the range; plain code turns it into dates, so the AI never does date arithmetic.</p>
+    </div>
+    <figure>
+      <div class="diagram">
+        <svg class="halo" viewBox="0 0 1100 330" role="img" aria-label="Timeline with today on the right and two years ago on the left. Four bars: in the last 90 days covers the most recent 90 days; at least 180 days ago covers everything older than 180 days; between 365 and 730 days ago covers the year before last; this pregnancy, approximated, covers the last 365 days with a dashed outline.">
+          <line class="axis" x1="70" y1="268" x2="1046" y2="268"/>
+          <line class="tick" x1="164" y1="40" x2="164" y2="268"/>
+          <line class="tick" x1="602" y1="40" x2="602" y2="268"/>
+          <line class="tick" x1="824" y1="40" x2="824" y2="268"/>
+          <line class="tick" x1="932" y1="40" x2="932" y2="268"/>
+          <line class="today" x1="1040" y1="30" x2="1040" y2="276"/>
+          <text class="ts" x="164" y="290" text-anchor="middle">730 days (2 years) ago</text>
+          <text class="ts" x="602" y="290" text-anchor="middle">365 days (1 year) ago</text>
+          <text class="ts" x="824" y="290" text-anchor="middle">180</text>
+          <text class="ts" x="932" y="290" text-anchor="middle">90</text>
+          <text class="t" x="1040" y="292" text-anchor="middle">today</text>
+          <text class="ts" x="70" y="314">← older claims</text>
+
+          <text class="t" x="1034" y="52" text-anchor="end">“In the past 3 months”</text>
+          <text class="tm" x="1034" y="68" text-anchor="end">max_days_ago 90</text>
+          <rect class="bar bar-go" x="932" y="76" width="108" height="14" rx="3"/>
+
+          <text class="t" x="76" y="106">“Diagnosed at least 6 months ago”</text>
+          <text class="tm" x="330" y="106">min_days_ago 180</text>
+          <rect class="bar bar-go" x="70" y="114" width="754" height="14" rx="3"/>
+
+          <text class="t" x="170" y="158">“12 to 24 months postpartum” (a delivery code in this range)</text>
+          <text class="tm" x="170" y="174">min_days_ago 365, max_days_ago 730</text>
+          <rect class="bar bar-go" x="164" y="182" width="438" height="14" rx="3"/>
+
+          <text class="t" x="1034" y="214" text-anchor="end">“During this pregnancy”, approximated, reviewer confirms</text>
+          <text class="tm" x="1034" y="230" text-anchor="end">event + max_days_ago 365</text>
+          <rect class="bar bar-approx" x="602" y="238" width="438" height="14" rx="3"/>
+        </svg>
+      </div>
+      <figcaption>Solid bars are windows the criteria state exactly. The dashed bar is an approximation: the criteria name an event (a pregnancy) that claims can't date, so a standard window stands in for it and the rule card says “Approximate timing”.</figcaption>
+    </figure>
+    <div class="read">
+      <strong>How the filter uses a window</strong>
+      <ul>
+        <li><strong>Diagnoses:</strong> the member has a matching code dated inside the range. Every diagnosis date is kept, so all three shapes work. “At least 6 months ago” means some matching code is older than 180 days, so the condition has existed that long.</li>
+        <li><strong>Medications:</strong> only the last fill is stored, so only “no older than” works: “taking metformin now” means the last fill is in the last 90 days. A “no newer than” limit on a drug means a duration or start date (“stable dose for 3 months”), which can't be checked, so it goes to review.</li>
+        <li><strong>Events:</strong> when the criteria anchor timing to an event, the agent uses the standard table below if the event has a known length. Otherwise (“since surgery”) it leaves the window open and the rule goes to review.</li>
+      </ul>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Event in the criteria</th><th>Standard window</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>“currently taking”, “current”, “active”, “at screening / enrollment / baseline”</td><td>last 90 days</td><td>90 days is the longest common fill, so an active prescription or condition shows up</td></tr>
+          <tr><td>“within N weeks before screening / randomization / first dose”</td><td>last N days</td><td>The study visit is treated as today</td></tr>
+          <tr><td>“during this / the current / the index pregnancy”</td><td>last 365 days</td><td>40 weeks of pregnancy plus the first months after delivery</td></tr>
+          <tr><td>“postpartum”, “N to M months after delivery”</td><td>a delivery code (Z37, O80…) in the stated range; “immediately postpartum” = last 30 days</td><td>The delivery itself is coded</td></tr>
+          <tr><td>“current hospitalization / admission”</td><td>last 30 days</td><td>Most stays are shorter than a month</td></tr>
+          <tr><td>“since surgery”, “since diagnosis”, “during the study”</td><td>none: needs review</td><td>No fixed length, so any window would be a guess</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted prose">The table is the same for every trial and lives in one place in the code (<code>EVENT_APPROXIMATIONS</code> in <code>prompts.py</code>). The agent may not invent other approximations. In a check of the 873 diabetes trials in the sandbox, about 29% mention “at screening / enrollment / baseline”, 16% “currently taking”, 7% pregnancy timing and roughly 2–4% a range, so this covers a large share of timing language. Many “at screening” lines are about lab values, though, and those stay in review either way.</p>
+  </section>
+
+  <section>
+    <h2>A run, start to finish</h2>
+    <ol class="steps">
+      <li><strong>The coordinator clicks “Build with AI pharmacist”.</strong><span>The page POSTs to <code>/api/trials/{id}/filters/criteria/run</code> and starts reading a server-sent event stream.</span></li>
+      <li><strong>The backend checks it can run.</strong><span>The trial exists, has criteria text, isn't already being built (so no one pays twice), and an Anthropic key is set.</span></li>
+      <li><strong>It builds the context.</strong><span>The criteria text (the only source of rules); background that helps read it (official title, brief summary, interventions and arms, conditions, study population); step 1's ICD prefixes and step 2's age and sex rules, so the agent doesn't redo them. The system prompt also describes the member tables, so the agent knows what claims can check.</span></li>
+      <li><strong>The agent works through the criteria.</strong><span>Each Claude turn either writes a short progress note, asks for lookups (often several at once), or submits. Every lookup and its result streams to the page as it happens.</span></li>
+      <li><strong>It submits every rule in one call.</strong><span>The arguments are validated against the schema; anything malformed goes back to the model to fix.</span></li>
+      <li><strong>Plain code verifies and builds the filter.</strong><span>Quotes, codes and drugs are checked, drugs are expanded to NDCs, each rule is grouped, and SQL is written per rule and for the whole step.</span></li>
+      <li><strong>The result is shown and kept for a day.</strong><span>Reopening step 3 reads it from memory instead of paying for another run.</span></li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>The member data the filters run against</h2>
+    <p class="prose">The agent is told these tables and columns, never any rows. What they hold decides which rules can become filters: diagnoses keep every date, but prescriptions keep only the most recent fill of each NDC.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Table</th><th>One row per</th><th>Columns</th></tr></thead>
+        <tbody>
+          <tr><td><code>members</code></td><td>member</td><td>member_id, birth_date, sex (MALE / FEMALE)</td></tr>
+          <tr><td><code>member_diagnoses</code></td><td>diagnosis code per claim date (every date kept)</td><td>member_id, code_system (ICD10CM / ICD9CM), icd_code (no dot), diagnosis_date</td></tr>
+          <tr><td><code>member_prescriptions</code></td><td>member and NDC (most recent fill only)</td><td>member_id, ndc (11 digits), last_fill_date</td></tr>
+          <tr><td><code>ndc_lookup</code></td><td>NDC (reference, from RxNorm)</td><td>ndc, ingredient_rxcui, atc_class</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Rule in the criteria</th><th>Window the agent gives</th><th>Checkable?</th><th>How</th></tr></thead>
+        <tbody>
+          <tr><td>“History of type 2 diabetes”</td><td><code>ever</code></td><td><span class="pill p-go">Yes</span></td><td>Any E11 code on any date</td></tr>
+          <tr><td>“Hospitalized for heart failure in the past year”</td><td><code>max 365</code></td><td><span class="pill p-go">Yes</span></td><td>A matching diagnosis dated in the last 365 days</td></tr>
+          <tr><td>“Diagnosed at least 6 months ago”</td><td><code>min 180</code></td><td><span class="pill p-go">Yes</span></td><td>A matching diagnosis dated on or before the cutoff</td></tr>
+          <tr><td>“12 to 24 months postpartum”</td><td><code>min 365, max 730</code></td><td><span class="pill p-go">Yes</span></td><td>A delivery code dated in that range</td></tr>
+          <tr><td>“Gestational diabetes during this pregnancy”</td><td>event, <code>max 365</code></td><td><span class="pill p-soon">Yes, approximate</span></td><td>O24.4 in the last year; a reviewer confirms the timing</td></tr>
+          <tr><td>“No SGLT2 inhibitor in the past 3 months”</td><td><code>max 90</code>, must not have</td><td><span class="pill p-go">Yes</span></td><td>No class member's last fill in the last 90 days</td></tr>
+          <tr><td>“Currently taking metformin”</td><td>event, <code>max 90</code></td><td><span class="pill p-soon">Yes, approximate</span></td><td>Last fill in the last 90 days</td></tr>
+          <tr><td>“On a stable dose for 3 months”, “started insulin in the last 6 months”</td><td><code>min</code> on a drug</td><td><span class="pill p-soon">Needs review</span></td><td>Needs the first fill or every fill; only the last is stored</td></tr>
+          <tr><td>“HbA1c 7–10%”, “eGFR ≥ 30”</td><td>any</td><td><span class="pill p-soon">Needs review</span></td><td>No lab results in claims</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">The preferred table <code>member_pharmacy_fills</code> (every fill, with days of supply) would make drug duration and new-start rules checkable too. The web app's Member data page (<code>/data-schema</code>) lists every table with CREATE TABLE statements.</p>
+  </section>
+
+  <section>
+    <h2>The tools</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>Asks</th><th>Returns to the model</th><th>Why it exists</th></tr></thead>
+        <tbody>
+          <tr><td><code>search_icd10cm</code></td><td>UMLS search, ICD-10-CM only, by words</td><td>Up to 12 codes with names, best first</td><td>The model finds codes instead of remembering them</td></tr>
+          <tr><td><code>icd10cm_code</code></td><td>UMLS source lookup</td><td>Name, whether it has more specific codes, or “not a code”</td><td>Confirms a code and its level</td></tr>
+          <tr><td><code>icd10cm_children</code></td><td>UMLS children</td><td>The next level down</td><td>Picks the right level (O24.1 vs O24.11)</td></tr>
+          <tr><td><code>find_drug</code></td><td>RxNav approximate match</td><td>Matches → ingredients (RxCUI) → ATC classes</td><td>Brands and products resolve to ingredients</td></tr>
+          <tr><td><code>drug_class</code></td><td>RxClass, ATC levels 1–4</td><td>Class ID, name, member ingredients</td><td>“SGLT2 inhibitors”, “insulin” as a whole class</td></tr>
+          <tr><td><code>submit_criteria</code></td><td>Nothing; ends the loop</td><td>“Received N rules”</td><td>One structured hand-off, schema-validated</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>What the model gets, and what it must return</h2>
+    <div class="grid-2">
+      <div class="card">
+        <h3>System prompt (cached)</h3>
+        <p class="muted">Role: clinical pharmacist and certified coder for a health plan. The member tables and columns above, and what they can and can't answer (every diagnosis date; only the last fill per drug). How to split criteria into atomic must-have / must-not-have rules, find codes and drugs only through tools, describe time windows as a range of days without computing dates, use only the standard event approximations, keep non-codable rules with a reason, respect steps 1–2, write a one or two sentence progress update before each round of lookups (shown live in the activity feed), and finish with one <code>submit_criteria</code> call.</p>
+        <h3>User message</h3>
+        <p class="muted">Trial ID and title; what steps 1 and 2 already cover; background labelled “not a source of rules” (official title, conditions, brief summary up to 3,000 characters, interventions with other names and descriptions, arms with what each receives, study population); then the criteria text verbatim between <code>&lt;&lt;&lt;</code> and <code>&gt;&gt;&gt;</code>, marked as the only source of rules.</p>
+      </div>
+      <div class="card">
+        <h3>One rule (<code>AgentCriterion</code>)</h3>
+<pre>{
+  "source_text": "verbatim quote",
+  "section": "inclusion | exclusion",
+  "requirement": "must_have | must_not_have",
+  "type": "diagnosis | medication | age_sex |
+           lab | procedure | other",
+  "codable": true,
+  "icd10cm_codes": ["O24.11"],
+  "drugs": [{"name": "...", "rxcui": "...",
+             "atc_class": "A10BK"}],
+  "window": {"type": "ever | days_ago |
+                     event | not_stated",
+             "min_days_ago": null,
+             "max_days_ago": 365,
+             "event": "this pregnancy",
+             "approximation": "A pregnancy and the
+               months after delivery fit in a year."},
+  "covered_by_step": "age_sex | diagnoses | null",
+  "reason_not_codable": null,
+  "rationale": "plain-language why"
+}</pre>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How each rule is grouped</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Group</th><th>When</th><th>Effect on members</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill p-mut">Covered</span></td><td>The agent marked it as covered by step 1 or step 2</td><td>None here; the earlier step applies it</td></tr>
+          <tr><td><span class="pill p-err">Flagged</span></td><td>Quote not found in the text, marked codable but no confirmed code or drug, or a window that runs backwards</td><td>Left out of the filter; shown for review</td></tr>
+          <tr><td><span class="pill p-soon">Needs review</span></td><td>Claims can't answer it (labs, consent, language, judgment), its window depends on an open-ended event (“since surgery”), or it's a drug duration or new-start rule (only the last fill is stored)</td><td>Doesn't remove anyone; a person checks it</td></tr>
+          <tr><td><span class="pill p-go">Checked from claims</span></td><td>Everything else with confirmed codes or drugs. Rules whose window approximates an event carry an “Approximate timing” tag.</td><td>Applied: members must meet every one</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>SQL it writes</h2>
+    <div class="grid-2">
+<pre>-- diagnosis rule, must_have, any time
+member_id IN (
+  SELECT member_id FROM member_diagnoses
+  WHERE code_system = 'ICD10CM'
+    AND (icd_code LIKE 'O2411%')
+)</pre>
+<pre>-- medication rule, must_not_have, 90 days
+member_id NOT IN (
+  SELECT p.member_id FROM member_prescriptions p
+  JOIN ndc_lookup n ON n.ndc = p.ndc
+  WHERE (n.atc_class LIKE 'A10BK%')
+    AND p.last_fill_date >= DATE '2026-07-16'
+)</pre>
+<pre>-- diagnosis rule, 12–24 months ago
+member_id IN (
+  SELECT member_id FROM member_diagnoses
+  WHERE code_system = 'ICD10CM'
+    AND (icd_code LIKE 'Z37%' OR icd_code LIKE 'O80%')
+    AND diagnosis_date >= DATE '2024-10-14'
+    AND diagnosis_date <= DATE '2025-10-14'
+)</pre>
+    </div>
+    <p class="muted prose">The step's SQL joins every “checked from claims” rule with AND under <code>SELECT member_id FROM members</code>. Codes are stored without dots, so <code>O24.11</code> becomes the prefix <code>O2411%</code>. <code>ndc_lookup</code> is the planned RxNorm reference table (ndc, ingredient_rxcui, atc_class); the page also shows the live NDC count and samples per drug.</p>
+  </section>
+
+  <section>
+    <h2>When something goes wrong</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Situation</th><th>What happens</th></tr></thead>
+        <tbody>
+          <tr><td>No Anthropic key</td><td>503 before any call: “Add ANTHROPIC_API_KEY to the .env file”. Steps 1–2 keep working.</td></tr>
+          <tr><td>Run already in progress</td><td>409, so a second click can't double the cost</td></tr>
+          <tr><td>Bad tool input or a lookup error</td><td>Returned to the model as an error result; it retries or moves on</td></tr>
+          <tr><td>Malformed submission</td><td>Schema error returned to the model; it resubmits</td></tr>
+          <tr><td>Answers in text</td><td>One reminder, then “answered in text twice”</td></tr>
+          <tr><td>Safety refusal</td><td>The API retries on a fallback model first; if that also refuses, “declined to review”</td></tr>
+          <tr><td>Answer cut off</td><td>“cut off before it finished”</td></tr>
+          <tr><td>Too many lookups</td><td>Stops at 100 graph steps: “used too many lookups”</td></tr>
+          <tr><td>Rate limit / API / network error</td><td>Clear message in the feed; nothing is cached, so “Try again” starts fresh</td></tr>
+          <tr><td>UMLS or RxNav down</td><td>“A code lookup failed”, with the service named</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Which ClinicalTrials.gov fields the agent gets</h2>
+    <p class="prose">The criteria text is the only source of rules; the background fields help the agent interpret it. All of them are already fetched for the trial page, so they add a few hundred tokens per run and no extra API calls.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Field</th><th>What it fixes</th><th>Example</th><th>Add?</th></tr></thead>
+        <tbody>
+          <tr><td>Interventions + arms</td><td>Criteria often say “the study drug”, “investigational product” or “prior exposure to the study medication” without naming it</td><td>In the Polypill trial (NCT06143566), a rule like “allergy to the study drug” would mean finerenone, empagliflozin and losartan</td><td><span class="pill p-go">Added</span></td></tr>
+          <tr><td>Official title</td><td>Usually narrower than the brief title, and names the population</td><td>“…Among Patients With Diabetes at Risk of Heart Failure”</td><td><span class="pill p-go">Added</span></td></tr>
+          <tr><td>Brief summary</td><td>Resolves ambiguous criteria (“the condition”, “standard therapy”) and explains the population</td><td>Illustrative: a summary saying participants are “on stable metformin therapy”</td><td><span class="pill p-go">Added</span></td></tr>
+          <tr><td>Keywords</td><td>Extra condition and drug words for the agent's searches</td><td>“CKD”, “SGLT2i”</td><td><span class="pill p-acc">Not yet, minor</span></td></tr>
+          <tr><td>Phase and study type</td><td>Hints for wash-out and prior-therapy rules (phase 1 often excludes recent investigational drugs)</td><td>Phase 1, interventional</td><td><span class="pill p-acc">Not yet, minor</span></td></tr>
+          <tr><td>Gender description</td><td>Explains gender-based eligibility in the sex rule</td><td>“restricted to pregnant individuals”</td><td><span class="pill p-acc">Not yet; step 2 shows it</span></td></tr>
+          <tr><td>Detailed description</td><td>Occasionally useful, but long (often thousands of words) and mostly about procedures</td><td>—</td><td><span class="pill p-mut">No</span></td></tr>
+          <tr><td>Outcomes, sites, contacts, sponsor, dates</td><td>Don't change who is eligible</td><td>—</td><td><span class="pill p-mut">No</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="rec">
+      <strong>How it's guarded</strong>
+      <p>The background sits under a heading that says it isn't a source of rules, the criteria are marked as the only source, the system prompt repeats it, and every rule's quote must be found in the criteria text or it's flagged. Next, measure it: run the same 10–20 trials before and after and compare which rules change.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Live runs so far</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Trial</th><th>Rules</th><th>Applied as filters</th><th>Needs review</th><th>Time, model calls, lookups</th><th>Tokens in / out</th></tr></thead>
+        <tbody>
+          <tr><td>NCT05909046, before event windows</td><td>14</td><td>1</td><td>12</td><td>35 s, 3, 9</td><td>20.9k / 4.0k</td></tr>
+          <tr><td>NCT05909046, with event windows</td><td>16</td><td>6 (4 approximate)</td><td>9</td><td>42 s, 4, 10</td><td>33.4k / 4.6k</td></tr>
+          <tr><td>NCT06143566 (polypill)</td><td>13</td><td>4</td><td>8</td><td>39 s, 3, 9</td><td>23.6k / 4.2k</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted prose">Every quote was found in the criteria text and every code passed the UMLS check in all three runs. About 14k input tokens per run are read from the prompt cache. The polypill trial turned out to have no drug rules, so the drug-to-NDC path has still only been tested with scripted data.</p>
+  </section>
+
+  <section>
+    <h2>Known gaps</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Gap</th><th>Seen in</th><th>Effect</th><th>Possible fix</th></tr></thead>
+        <tbody>
+          <tr><td>Alternatives are joined with AND</td><td>NCT05909046 has two sub-studies: “immediately postpartum” or “12–24 months postpartum”</td><td>Both became must-have rules, and no one can meet both, so the combined filter matches nobody</td><td>Let the agent group rules as “any one of” (sub-studies, “A or B” criteria); the SQL joins a group with OR</td></tr>
+          <tr><td>A lab threshold read as a diagnosis</td><td>“Hyperkalemia > 5.0” in NCT06143566 became “no E87.5 ever”</td><td>Excludes anyone with any past hyperkalemia code, which is stricter than the trial</td><td>Prompt rule: a lab threshold stays a lab (needs review), and a related diagnosis is suggested with a recent window only</td></tr>
+          <tr><td>Approximations are judgment calls</td><td>Any “Approximate timing” rule</td><td>Some members are wrongly in or out</td><td>A person reviews every match before outreach, and the card shows the approximation</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Glossary</h2>
+    <dl class="gloss">
+      <dt>ICD-10-CM</dt><dd>US diagnosis codes on medical claims, e.g. O24.4 gestational diabetes. Stored without the dot; a code covers its more specific codes.</dd>
+      <dt>NDC</dt><dd>National Drug Code: one per packaged product, on every pharmacy claim. A single drug has hundreds.</dd>
+      <dt>RxNorm, RxCUI</dt><dd>NLM's drug vocabulary and its IDs. Links brand names, ingredients and NDCs.</dd>
+      <dt>ATC class</dt><dd>A drug class code, e.g. A10BK for SGLT2 inhibitors. Lets one rule cover a whole class.</dd>
+      <dt>UMLS</dt><dd>NLM's service that links medical vocabularies; used here to search and check ICD-10-CM codes.</dd>
+      <dt>LangGraph</dt><dd>The library that runs the agent's loop: Claude's turn, the lookups, the hand-off.</dd>
+      <dt>SSE</dt><dd>Server-sent events: how the page receives the live activity feed while the agent works.</dd>
+      <dt>Codable</dt><dd>A rule claims data can answer, so it can become SQL.</dd>
+    </dl>
+  </section>
+</div>

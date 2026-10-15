@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Member data · Trial Atlas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header id="nav" class="nav"></header>
+
+  <main id="main" class="main">
+    <section id="status" class="status-msg" aria-live="polite" hidden></section>
+
+    <div id="page" class="dashboard schema-page" hidden>
+      <header class="builder-head">
+        <div>
+          <h1 class="builder-title">Member data the filters expect</h1>
+          <p class="muted schema-intro">The SQL from every filter step runs against these tables. Load your claims data in this shape and the filters work as written. Trial Atlas never reads or stores member data; this page only describes the shape.</p>
+        </div>
+      </header>
+
+      <dl class="schema-legend">
+        <div><dt><span class="pill st-required">Required</span></dt><dd>The filters query it today.</dd></div>
+        <div><dt><span class="pill st-reference">Reference</span></dt><dd>Built from RxNorm, not from member data.</dd></div>
+        <div><dt><span class="pill st-preferred">Preferred</span></dt><dd>Better to have if your source data allows. Nothing reads it yet.</dd></div>
+      </dl>
+
+      <div id="tables" class="schema-tables"></div>
+
+      <section class="panel" aria-labelledby="ddl-title">
+        <div class="panel-head table-head">
+          <div>
+            <h3 id="ddl-title">Create the tables</h3>
+            <p class="muted">DuckDB / ANSI SQL. Primary keys show the grain of each table.</p>
+          </div>
+          <button type="button" class="ghost" id="copy-ddl">Copy SQL</button>
+        </div>
+        <pre class="code-block" id="ddl"></pre>
+      </section>
+    </div>
+  </main>
+
+  <script src="/us_tiles.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/data-schema.js"></script>
+</body>
+</html>

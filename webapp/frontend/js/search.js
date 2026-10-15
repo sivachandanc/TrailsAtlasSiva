@@ -1,9 +1,8 @@
 "use strict";
+// Condition search dashboard (/search?condition=...).
 
-const $ = (sel) => document.querySelector(sel);
-const fmt = new Intl.NumberFormat("en-US");
-const charts = {};
 const PAGE = 100; // table rows rendered per scroll step
+const PHASE_RANK = { "Early phase 1": 0, "Phase 1": 1, "Phase 2": 2, "Phase 3": 3, "Phase 4": 4, "No phase": 5 };
 
 const state = {
   result: null,
@@ -12,43 +11,31 @@ const state = {
   stateFilter: null, // full state name
   textFilter: "",
   sort: { key: null, dir: 1 },
+  map: null,
 };
 
-// ---------- search ----------
+const condition = (new URLSearchParams(location.search).get("condition") || "").trim();
+mountNav({ active: "search", withSearch: true, search: { mode: "condition", value: condition } });
 
-const form = $("#search-form");
-const conditionInput = $("#condition");
+if (condition) {
+  runSearch(condition);
+} else {
+  $("#start").hidden = false;
+  $(".searchbox input[name=q]").focus();
+}
 
-form.addEventListener("submit", (e) => {
-  e.preventDefault();
-  runSearch(conditionInput.value.trim());
-});
-$("#examples").addEventListener("click", (e) => {
-  const q = e.target.closest("button")?.dataset.q;
-  if (q) { conditionInput.value = q; runSearch(q); }
-});
-window.addEventListener("popstate", () => {
-  const q = new URLSearchParams(location.search).get("condition");
-  if (q) { conditionInput.value = q; runSearch(q, { push: false }); }
-});
-
-async function runSearch(condition, { push = true } = {}) {
-  if (condition.length < 2) { conditionInput.reportValidity(); return; }
-  if (push) history.pushState(null, "", `?condition=${encodeURIComponent(condition)}`);
-  document.title = `${condition} · Trial Search`;
-  showStatus("loading", condition);
-  $("#search-button").disabled = true;
+async function runSearch(cond) {
+  document.title = `${cond} · Trial Atlas`;
+  showLoading();
   try {
-    const params = new URLSearchParams({ condition, source: $("#source").value, country: $("#country").value });
+    const params = new URLSearchParams({ condition: cond, source: "clinicaltrials_gov", country: "United States" });
     const res = await fetch(`/api/search?${params}`);
     const body = await res.json();
     if (!res.ok) throw new Error(errorText(body));
-    if (body.kpis.open_trials === 0) { showStatus("empty", condition); return; }
+    if (body.kpis.open_trials === 0) { showStatus("empty", cond); return; }
     render(body);
   } catch (err) {
-    showStatus("error", condition, err.message);
-  } finally {
-    $("#search-button").disabled = false;
+    showStatus("error", cond, err.message);
   }
 }
 
@@ -58,22 +45,28 @@ function errorText(body) {
   return "The search didn't complete.";
 }
 
-function showStatus(kind, condition, message = "") {
-  const el = $("#status");
+function showLoading() {
   $("#dashboard").hidden = true;
+  $("#skeleton").hidden = false;
+  const el = $("#status");
+  el.hidden = false;
+  el.className = "status-msg loading";
+  el.innerHTML = `<div class="spinner" role="presentation"></div>
+    <h2>Searching ClinicalTrials.gov for open US trials on “${escapeHtml(condition)}”</h2>
+    <p>Broad conditions like cancer return thousands of trials and can take up to 10 seconds.</p>`;
+}
+
+function showStatus(kind, cond, message = "") {
+  $("#dashboard").hidden = true;
+  $("#skeleton").hidden = true;
+  const el = $("#status");
   el.hidden = false;
   el.className = `status-msg ${kind}`;
-  const safe = escapeHtml(condition);
-  if (kind === "loading") {
-    el.innerHTML = `<div class="spinner" role="presentation"></div>
-      <h2>Searching ClinicalTrials.gov for open US trials on “${safe}”</h2>
-      <p>Broad conditions like cancer return thousands of trials and can take up to 10 seconds.</p>`;
-  } else if (kind === "empty") {
-    el.innerHTML = `<h2>No open US trials match “${safe}”</h2>
+  if (kind === "empty") {
+    el.innerHTML = `<h2>No open US trials match “${escapeHtml(cond)}”</h2>
       <p>Check the spelling, or try a broader term such as “diabetes” instead of a specific drug name.</p>`;
   } else {
-    el.innerHTML = `<h2>The search didn't complete</h2><p>${escapeHtml(message)}</p>
-      <p>Try again in a moment.</p>`;
+    el.innerHTML = `<h2>The search didn't complete</h2><p>${escapeHtml(message)}</p><p>Try again in a moment.</p>`;
   }
 }
 
@@ -81,11 +74,8 @@ function showStatus(kind, condition, message = "") {
 
 function render(r) {
   state.result = r;
-  state.stateFilter = null;
-  state.textFilter = "";
-  state.sort = { key: null, dir: 1 };
-  $("#table-filter").value = "";
   $("#status").hidden = true;
+  $("#skeleton").hidden = true;
   $("#dashboard").hidden = false;
 
   $("#result-title").textContent = `${fmt.format(r.kpis.open_trials)} open trials for “${r.condition}”`;
@@ -95,16 +85,23 @@ function render(r) {
     : `Recruiting or not yet recruiting, with at least one US site. Live from ClinicalTrials.gov, ${when}.`;
 
   renderKpis(r.kpis);
-  renderMap(r.by_state);
+  state.map = renderTileMap(
+    $("#tile-map"), $("#map-legend"),
+    new Map(r.by_state.map((s) => [s.state, { value: s.trials,
+      title: `${s.state}: ${fmt.format(s.trials)} trials, ${fmt.format(s.open_sites)} open trial sites` }])),
+    { unit: "trials", onSelect: setStateFilter },
+  );
   applyTable();
-  document.fonts.ready.then(() => renderCharts(r));
+  document.fonts.ready.then(() => renderCharts(r)); // measure chart labels with the real font
 }
+
+$("#copy-link").addEventListener("click", (e) => copyText(location.href, e.currentTarget));
 
 function renderKpis(k) {
   const pct = (x) => (x == null ? "–" : `${Math.round(x * 100)}%`);
   const tiles = [
     [fmt.format(k.open_trials), "Open trials", `${fmt.format(k.recruiting)} recruiting, ${fmt.format(k.not_yet_recruiting)} not yet`],
-    [fmt.format(k.open_us_sites), "Open US sites", "Sites listed as recruiting, or with no status"],
+    [fmt.format(k.open_us_sites), "Open trial sites", "One per trial at each open US location; a hospital running 3 trials counts 3 times"],
     [k.states, "States", "With at least one open site"],
     [fmt.format(k.cities), "Cities", "With at least one open site"],
     [k.median_enrollment == null ? "–" : fmt.format(k.median_enrollment), "Median enrollment", "Participants each trial aims to enroll"],
@@ -115,50 +112,9 @@ function renderKpis(k) {
   ).join("");
 }
 
-// ---------- tile map ----------
-
-function renderMap(byState) {
-  const counts = new Map(byState.map((s) => [s.state, s]));
-  const max = Math.max(1, ...byState.map((s) => s.trials));
-  // six buckets on a square-root scale, so mid-sized states still get distinct colors
-  const bucket = (n) => (n ? Math.min(6, 1 + Math.floor(Math.sqrt(n / max) * 5.999)) : 0);
-
-  const el = $("#tile-map");
-  el.innerHTML = "";
-  for (const [code, name, col, row] of window.US_TILES) {
-    const s = counts.get(name);
-    const n = s ? s.trials : 0;
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = `tile${n ? ` s${bucket(n)}` : ""}`;
-    b.style.gridColumn = col + 1;
-    b.style.gridRow = row + 1;
-    b.dataset.state = name;
-    b.disabled = !n;
-    b.title = n ? `${name}: ${fmt.format(n)} trials, ${fmt.format(s.open_sites)} open sites` : `${name}: no open trials`;
-    b.setAttribute("aria-label", b.title);
-    b.setAttribute("aria-pressed", "false");
-    b.innerHTML = `<span class="code">${code}</span><span class="n">${n ? fmt.format(n) : ""}</span>`;
-    b.addEventListener("click", () => setStateFilter(state.stateFilter === name ? null : name));
-    el.appendChild(b);
-  }
-
-  const steps = [1, 2, 3, 4, 5, 6].map((i) => {
-    const lo = Math.ceil(max * Math.pow((i - 1) / 6, 2)) || 1;
-    return `<span><span class="swatch tile s${i}"></span>${fmt.format(lo)}+</span>`;
-  });
-  const unmapped = byState.filter((s) => !window.US_TILES.some((t) => t[1] === s.state));
-  $("#map-legend").innerHTML = `<span>Trials:</span>${steps.join("")}` +
-    (unmapped.length ? `<span>Also: ${unmapped.map((s) => `${escapeHtml(s.state)} (${s.trials})`).join(", ")}</span>` : "");
-}
-
 function setStateFilter(name) {
   state.stateFilter = name;
-  document.querySelectorAll(".tile").forEach((t) => {
-    const on = t.dataset.state === name;
-    t.classList.toggle("selected", on);
-    t.setAttribute("aria-pressed", String(on));
-  });
+  state.map.select(name);
   const chip = $("#state-chip");
   chip.hidden = !name;
   if (name) {
@@ -166,43 +122,10 @@ function setStateFilter(name) {
     chip.querySelector("button").addEventListener("click", () => setStateFilter(null));
   }
   applyTable();
-  if (name) $("#table-title").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  if (name) $("#table-title").scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
 }
 
 // ---------- charts ----------
-
-function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
-
-function chart(id) {
-  if (!charts[id]) charts[id] = echarts.init(document.getElementById(id), null, { renderer: "svg" });
-  return charts[id];
-}
-
-function baseOption() {
-  return {
-    textStyle: { fontFamily: css("--font"), color: css("--ink") },
-    grid: { left: 8, right: 36, top: 8, bottom: 8, containLabel: true },
-    tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: css("--surface"),
-               borderColor: css("--line"), textStyle: { color: css("--ink") } },
-    animationDuration: 500,
-  };
-}
-
-function hbar(id, items, { color = css("--accent"), labelWidth = 150 } = {}) {
-  const data = [...items].reverse(); // largest on top
-  chart(id).setOption({
-    ...baseOption(),
-    grid: { left: 14, right: 44, top: 4, bottom: 4, containLabel: true },
-    xAxis: { type: "value", show: false },
-    yAxis: { type: "category", data: data.map((d) => d.label), axisTick: { show: false },
-             axisLine: { lineStyle: { color: css("--line") } },
-             axisLabel: { color: css("--ink"), width: labelWidth, overflow: "truncate" } },
-    series: [{ type: "bar", data: data.map((d) => d.count), barMaxWidth: 18,
-               itemStyle: { color, borderRadius: [0, 4, 4, 0] },
-               label: { show: true, position: "right", color: css("--muted"), formatter: (p) => fmt.format(p.value) } }],
-  }, true);
-}
-
 
 function renderCharts(r) {
   hbar("chart-cities", r.top_cities.map((c) => ({ label: `${c.city}, ${stateCode(c.state)}`, count: c.trials })), { labelWidth: 130 });
@@ -221,21 +144,17 @@ function renderTiming(r) {
   const monthLabel = (m) => new Date(`${m}-01T00:00:00`).toLocaleString("en-US", { month: "short", year: "2-digit" });
   const starts = r.starts_by_month;
   const comps = r.completions_by_month;
+  const axis = (data, interval) => ({ type: "category", data, axisTick: { show: false },
+    axisLine: { lineStyle: { color: css("--line") } }, axisLabel: { color: css("--muted"), interval } });
+  const value = { type: "value", splitLine: { lineStyle: { color: css("--line") } }, axisLabel: { color: css("--muted") } };
   chart("chart-timing").setOption({
     ...baseOption(),
     legend: { top: 0, left: 0, textStyle: { color: css("--muted") }, itemWidth: 12, itemHeight: 12 },
     grid: [{ left: 8, right: "40%", top: 36, bottom: 8, containLabel: true },
            { left: "64%", right: 8, top: 36, bottom: 8, containLabel: true }],
-    xAxis: [
-      { gridIndex: 0, type: "category", data: starts.map((d) => monthLabel(d.label)), axisTick: { show: false },
-        axisLine: { lineStyle: { color: css("--line") } }, axisLabel: { color: css("--muted"), interval: 5 } },
-      { gridIndex: 1, type: "category", data: comps.map((d) => monthLabel(d.label)), axisTick: { show: false },
-        axisLine: { lineStyle: { color: css("--line") } }, axisLabel: { color: css("--muted"), interval: 2 } },
-    ],
-    yAxis: [
-      { gridIndex: 0, type: "value", splitLine: { lineStyle: { color: css("--line") } }, axisLabel: { color: css("--muted") } },
-      { gridIndex: 1, type: "value", splitLine: { lineStyle: { color: css("--line") } }, axisLabel: { color: css("--muted") } },
-    ],
+    xAxis: [{ gridIndex: 0, ...axis(starts.map((d) => monthLabel(d.label)), 5) },
+            { gridIndex: 1, ...axis(comps.map((d) => monthLabel(d.label)), 2) }],
+    yAxis: [{ gridIndex: 0, ...value }, { gridIndex: 1, ...value }],
     series: [
       { name: "Started", type: "bar", xAxisIndex: 0, yAxisIndex: 0, stack: "s", barMaxWidth: 14,
         data: starts.map((d) => (d.label <= thisMonth ? d.count : null)), itemStyle: { color: css("--accent"), borderRadius: [3, 3, 0, 0] } },
@@ -247,12 +166,9 @@ function renderTiming(r) {
   }, true);
 }
 
-window.addEventListener("resize", () => Object.values(charts).forEach((c) => c.resize()));
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => state.result && renderCharts(state.result));
 
 // ---------- table ----------
-
-const PHASE_RANK = { "Early phase 1": 0, "Phase 1": 1, "Phase 2": 2, "Phase 3": 3, "Phase 4": 4, "No phase": 5 };
 
 $("#table-filter").addEventListener("input", (e) => { state.textFilter = e.target.value.trim().toLowerCase(); applyTable(); });
 document.querySelectorAll(".trials th[data-sort]").forEach((th) => {
@@ -294,7 +210,7 @@ function applyTable() {
   $("#table-body").innerHTML = "";
   $("#table-scroll").scrollTop = 0;
   const where = state.stateFilter ? ` with an open site in ${state.stateFilter}` : "";
-  $("#table-count").textContent = `${fmt.format(rows.length)} of ${fmt.format(r.trials.length)} trials${where}`;
+  $("#table-count").textContent = `${fmt.format(rows.length)} of ${fmt.format(r.trials.length)} trials${where}. Select an NCT ID to open the trial.`;
   if (!rows.length) {
     $("#table-body").innerHTML = `<tr class="table-empty"><td colspan="10">No trials match this filter. Clear the filter text${state.stateFilter ? " or the state" : ""} to see more.</td></tr>`;
     return;
@@ -305,10 +221,12 @@ function applyTable() {
 function renderMoreRows() {
   const next = state.rows.slice(state.shown, state.shown + PAGE);
   if (!next.length) return;
+  const from = encodeURIComponent(condition);
   const html = next.map((t) => `
     <tr>
-      <td><a href="${t.url}" target="_blank" rel="noopener">${t.id}</a></td>
-      <td>${escapeHtml(t.title || "")}</td>
+      <td><a href="/trials/${t.id}?from=${from}">${t.id}</a>
+        <a class="ext" href="${t.url}" target="_blank" rel="noopener" aria-label="${t.id} on ClinicalTrials.gov" title="Open on ClinicalTrials.gov">↗</a></td>
+      <td><a class="row-title" href="/trials/${t.id}?from=${from}">${escapeHtml(t.title || "")}</a></td>
       <td><span class="pill ${t.status.toLowerCase().replace(/ /g, "-")}">${t.status}</span></td>
       <td class="nowrap">${t.phases.join(", ") || "–"}</td>
       <td class="cond">${escapeHtml(t.conditions.join("; "))}</td>
@@ -325,16 +243,3 @@ function renderMoreRows() {
 new IntersectionObserver((entries) => {
   if (entries.some((e) => e.isIntersecting)) renderMoreRows();
 }, { root: $("#table-scroll"), rootMargin: "400px" }).observe($("#table-sentinel"));
-
-// ---------- helpers ----------
-
-const CODE_BY_NAME = new Map(window.US_TILES.map(([code, name]) => [name, code]));
-function stateCode(name) { return CODE_BY_NAME.get(name) || name || ""; }
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-// Start from the URL so results can be bookmarked or refreshed
-const initial = new URLSearchParams(location.search).get("condition");
-if (initial) { conditionInput.value = initial; runSearch(initial, { push: false }); }

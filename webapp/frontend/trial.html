@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trial · Trial Atlas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header id="nav" class="nav"></header>
+
+  <main id="main" class="main">
+    <a id="back" class="back" hidden></a>
+    <section id="status" class="status-msg" aria-live="polite" hidden></section>
+
+    <div id="skeleton" class="dashboard skeleton" aria-hidden="true" hidden>
+      <div class="sk sk-title"></div>
+      <div class="kpis">
+        <div class="sk sk-kpi"></div><div class="sk sk-kpi"></div><div class="sk sk-kpi"></div>
+        <div class="sk sk-kpi"></div><div class="sk sk-kpi"></div><div class="sk sk-kpi"></div>
+      </div>
+      <div class="grid"><div class="sk sk-panel span-12"></div></div>
+    </div>
+
+    <article id="dashboard" class="dashboard" hidden>
+      <header class="trial-head">
+        <div class="trial-id-row">
+          <span class="trial-id" id="trial-id"></span>
+          <button type="button" class="ghost small" id="copy-id">Copy ID</button>
+          <span id="trial-status"></span>
+          <span id="trial-tags" class="tags"></span>
+        </div>
+        <h1 id="trial-title" class="trial-title"></h1>
+        <p id="trial-official" class="muted trial-official"></p>
+        <div id="trial-conditions" class="trial-conditions"></div>
+        <p id="trial-sponsor" class="trial-sponsor"></p>
+        <div class="trial-actions">
+          <a id="eligibility-link" class="primary as-link">Build eligibility filters</a>
+          <a id="ctgov-link" class="button-link" target="_blank" rel="noopener">View on ClinicalTrials.gov ↗</a>
+          <button type="button" class="ghost" id="copy-link">Copy link</button>
+        </div>
+      </header>
+
+      <div id="banners" class="banners"></div>
+
+      <section class="kpis" id="kpis" aria-label="Key numbers"></section>
+
+      <div class="grid">
+        <section class="panel span-12" aria-labelledby="about-title" id="about-panel">
+          <div class="panel-head"><h3 id="about-title">About this trial</h3></div>
+          <div class="clamp" id="summary"></div>
+          <button type="button" class="link-button" id="summary-toggle" hidden>Show full summary</button>
+        </section>
+
+        <section class="panel span-12" aria-labelledby="timeline-title">
+          <div class="panel-head">
+            <h3 id="timeline-title">Timeline</h3>
+            <p class="muted" id="timeline-note"></p>
+          </div>
+          <div class="timeline" id="timeline"></div>
+        </section>
+
+        <section class="panel span-8" aria-labelledby="where-title">
+          <div class="panel-head">
+            <h3 id="where-title">Where it's running</h3>
+            <p class="muted" id="where-note">Sites per state. Select a state to filter the site list.</p>
+          </div>
+          <div id="tile-map" class="tile-map" role="group" aria-label="Sites by state"></div>
+          <div id="map-legend" class="legend"></div>
+          <p class="muted" id="other-countries"></p>
+        </section>
+
+        <section class="panel span-4" aria-labelledby="site-status-title">
+          <div class="panel-head">
+            <h3 id="site-status-title">Site status</h3>
+            <p class="muted">Each site reports its own status. Many leave it blank.</p>
+          </div>
+          <div class="chart" id="chart-site-status"></div>
+        </section>
+
+        <section class="panel span-12" aria-labelledby="elig-title">
+          <div class="panel-head">
+            <h3 id="elig-title">Who can join</h3>
+            <p class="muted" id="elig-note"></p>
+          </div>
+          <div id="eligibility" class="eligibility"></div>
+        </section>
+
+        <section class="panel span-6" aria-labelledby="arms-title">
+          <div class="panel-head"><h3 id="arms-title">What's being tested</h3></div>
+          <div id="arms" class="arms"></div>
+        </section>
+
+        <section class="panel span-6" aria-labelledby="outcomes-title">
+          <div class="panel-head"><h3 id="outcomes-title">What's measured</h3></div>
+          <div id="outcomes"></div>
+        </section>
+
+        <section class="panel span-6" aria-labelledby="conditions-title">
+          <div class="panel-head"><h3 id="conditions-title">Conditions and keywords</h3></div>
+          <div id="conditions"></div>
+        </section>
+
+        <section class="panel span-6" aria-labelledby="contacts-title">
+          <div class="panel-head"><h3 id="contacts-title">Who to contact</h3></div>
+          <div id="contacts"></div>
+        </section>
+
+        <section class="panel span-12" aria-labelledby="sites-title">
+          <div class="panel-head table-head">
+            <div>
+              <h3 id="sites-title">Sites</h3>
+              <p class="muted" id="sites-count"></p>
+            </div>
+            <div class="table-tools">
+              <span id="state-chip" class="chip" hidden></span>
+              <label class="visually-hidden" for="site-filter">Filter sites</label>
+              <input id="site-filter" type="search" placeholder="Filter by facility, city or ZIP">
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="trials">
+              <thead>
+                <tr>
+                  <th data-sort="facility" class="col-title">Facility</th>
+                  <th data-sort="city">City</th>
+                  <th data-sort="state">State</th>
+                  <th data-sort="zip">ZIP</th>
+                  <th data-sort="country">Country</th>
+                  <th data-sort="status">Status</th>
+                </tr>
+              </thead>
+              <tbody id="sites-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <p class="muted fetched" id="fetched"></p>
+    </article>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="/us_tiles.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/trial.js"></script>
+</body>
+</html>

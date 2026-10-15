@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Eligibility filters · Trial Atlas</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header id="nav" class="nav"></header>
+
+  <main id="main" class="main">
+    <a id="back" class="back">Back to the trial</a>
+    <section id="status" class="status-msg" aria-live="polite" hidden></section>
+
+    <div id="page" class="dashboard" hidden>
+      <header class="builder-head">
+        <div>
+          <h1 class="builder-title">Build eligibility filters</h1>
+          <p class="muted" id="trial-line"></p>
+        </div>
+      </header>
+
+      <!-- The funnel from the architecture: one dot per filter step. Built steps are links. -->
+      <ol class="stepper" aria-label="Filter steps">
+        <li class="step" data-step="diagnoses">
+          <a href="#diagnoses" class="step-link">
+            <span class="step-dot">1</span>
+            <span class="step-name">Diagnoses (ICD)</span>
+            <span class="step-sub"></span>
+          </a>
+        </li>
+        <li class="step" data-step="age-sex">
+          <a href="#age-sex" class="step-link">
+            <span class="step-dot">2</span>
+            <span class="step-name">Age &amp; sex</span>
+            <span class="step-sub"></span>
+          </a>
+        </li>
+        <li class="step" data-step="criteria">
+          <a href="#criteria" class="step-link">
+            <span class="step-dot">3</span>
+            <span class="step-name">Eligibility criteria</span>
+            <span class="step-sub"></span>
+          </a>
+        </li>
+        <li class="step upcoming">
+          <span class="step-dot">4</span>
+          <span class="step-name">Review</span>
+          <span class="step-sub">Coming next</span>
+        </li>
+      </ol>
+
+      <!-- Step 1: diagnoses -->
+      <section class="step-panel" id="step-diagnoses" aria-labelledby="dx-title" hidden>
+        <div class="step-panel-head">
+          <div>
+            <h2 id="dx-title">Step 1: Diagnoses (ICD-10-CM)</h2>
+            <p class="muted">Turns the trial's conditions into ICD-10-CM codes using UMLS, the US National Library of Medicine's terminology service, and shows every lookup along the way.</p>
+          </div>
+        </div>
+
+        <div id="dx-loading" class="status-msg loading" hidden></div>
+        <div id="dx-error" class="status-msg error" hidden></div>
+
+        <div id="dx-body" hidden>
+          <div id="dx-warnings" class="banners"></div>
+
+          <section class="panel result-panel" aria-labelledby="dx-result-title">
+            <h3 id="dx-result-title">Result</h3>
+            <div class="prefix-chips" id="dx-chips"></div>
+            <p id="dx-summary" class="result-summary"></p>
+          </section>
+
+          <section class="trace-section" aria-labelledby="dx-mesh-title">
+            <div class="trace-head">
+              <h3 id="dx-mesh-title">How we got here: MeSH conditions</h3>
+              <p class="muted">NLM tags each trial with standard MeSH condition terms. Each one is looked up in UMLS by its ID and by its name; the concepts both agree on are kept, then mapped to ICD-10-CM.</p>
+            </div>
+            <div id="dx-mesh" class="traces"></div>
+          </section>
+
+          <section class="trace-section" aria-labelledby="dx-text-title">
+            <div class="trace-head">
+              <h3 id="dx-text-title">How we got here: the sponsor's condition text</h3>
+              <p class="muted">The conditions the sponsor typed in, matched against every UMLS vocabulary (ignoring case, plurals and word order), then mapped to ICD-10-CM.</p>
+            </div>
+            <div id="dx-text" class="traces"></div>
+          </section>
+
+          <section class="panel" aria-labelledby="dx-final-title">
+            <div class="panel-head">
+              <h3 id="dx-final-title">Final ICD-10-CM prefixes</h3>
+              <p class="muted">Every code above, cut to its category and merged. A member passes with any one of these.</p>
+            </div>
+            <div class="table-scroll table-auto">
+              <table class="trials">
+                <thead><tr><th>Prefix</th><th class="col-title">ICD-10-CM category</th><th>From codes</th><th>Contributed by</th><th>Why this prefix</th></tr></thead>
+                <tbody id="dx-prefixes"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <details class="panel rules" id="dx-rules-panel">
+            <summary><h3>Rules used to get here</h3></summary>
+            <dl class="rules-list" id="dx-rules"></dl>
+          </details>
+
+          <section class="panel" aria-labelledby="dx-def-title">
+            <div class="panel-head table-head">
+              <div>
+                <h3 id="dx-def-title">Filter definition</h3>
+                <p class="muted">Ready to run against the planned <code>member_diagnoses</code> table (member_id, code_system, icd_code without dots).</p>
+              </div>
+              <button type="button" class="ghost" id="dx-copy-sql">Copy SQL</button>
+            </div>
+            <pre class="code-block" id="dx-sql"></pre>
+            <details class="json-details">
+              <summary>Show as JSON</summary>
+              <pre class="code-block" id="dx-json"></pre>
+            </details>
+          </section>
+        </div>
+
+        <div class="step-next">
+          <div>
+            <p class="step-next-label">Next step</p>
+            <p class="step-next-name">Age &amp; sex</p>
+            <p class="muted">Keeps members whose age and sex fit the trial's limits.</p>
+          </div>
+          <a href="#age-sex" class="primary as-link">Continue to step 2</a>
+        </div>
+      </section>
+
+      <!-- Step 2: age and sex -->
+      <section class="step-panel" id="step-age-sex" aria-labelledby="age-step-title" hidden>
+        <div class="step-panel-head">
+          <div>
+            <h2 id="age-step-title">Step 2: Age and sex</h2>
+            <p class="muted">Built from the trial's minimum age, maximum age and sex on ClinicalTrials.gov, with ages as of today.</p>
+          </div>
+        </div>
+
+        <div id="age-error" class="status-msg error" hidden></div>
+        <div id="warnings" class="banners"></div>
+
+        <div class="grid">
+          <article class="panel span-6 rule-card" id="age-card" aria-labelledby="age-title">
+            <h3 id="age-title">Age</h3>
+            <p class="rule" id="age-rule"></p>
+            <p class="rule-sub" id="age-range"></p>
+            <dl class="source-fields" id="age-fields"></dl>
+            <div>
+              <h4 class="why-title">Why</h4>
+              <ul class="why" id="age-why"></ul>
+            </div>
+          </article>
+
+          <article class="panel span-6 rule-card" id="sex-card" aria-labelledby="sex-title">
+            <h3 id="sex-title">Sex</h3>
+            <p class="rule" id="sex-rule"></p>
+            <p class="rule-sub" id="sex-sub"></p>
+            <dl class="source-fields" id="sex-fields"></dl>
+            <div>
+              <h4 class="why-title">Why</h4>
+              <ul class="why" id="sex-why"></ul>
+            </div>
+          </article>
+
+          <section class="panel span-12" aria-labelledby="def-title">
+            <div class="panel-head table-head">
+              <div>
+                <h3 id="def-title">Filter definition</h3>
+                <p class="muted">Ready to run against the planned <code>members</code> table (member_id, birth_date, sex).</p>
+              </div>
+              <button type="button" class="ghost" id="copy-sql">Copy SQL</button>
+            </div>
+            <pre class="code-block" id="sql"></pre>
+            <details class="json-details">
+              <summary>Show as JSON</summary>
+              <pre class="code-block" id="json"></pre>
+            </details>
+          </section>
+        </div>
+
+        <div class="step-next">
+          <a href="#diagnoses" class="ghost as-link">Back to step 1</a>
+          <div class="step-next-right">
+            <div>
+              <p class="step-next-label">Next step</p>
+              <p class="step-next-name">Eligibility criteria</p>
+              <p class="muted">An AI pharmacist turns the rest of the eligibility text into checks.</p>
+            </div>
+            <a href="#criteria" class="primary as-link">Continue to step 3</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 3: eligibility criteria (AI pharmacist) -->
+      <section class="step-panel" id="step-criteria" aria-labelledby="cr-title" hidden>
+        <div class="step-panel-head">
+          <div>
+            <h2 id="cr-title">Step 3: Eligibility criteria</h2>
+            <p class="muted">An AI pharmacist reads each inclusion and exclusion criterion, looks up real ICD-10-CM codes and drugs, and turns what claims can answer into filters. Everything it looked up is shown below.</p>
+          </div>
+        </div>
+
+        <section class="panel cr-intro" id="cr-intro" hidden>
+          <div class="cr-intro-grid">
+            <div>
+              <h3>What it does</h3>
+              <ul class="plain-bullets">
+                <li>Splits the criteria into single rules, and decides for each one whether a member must have it or must not have it.</li>
+                <li>Finds ICD-10-CM codes through UMLS and drugs through RxNorm, then expands drugs to every NDC.</li>
+                <li>Reads time windows such as “in the past 3 months”.</li>
+                <li>Keeps rules that claims can't answer (lab values, consent, language) as “needs review” instead of guessing.</li>
+              </ul>
+            </div>
+            <div>
+              <h3>What it sees</h3>
+              <p>This trial's eligibility criteria (the only source of rules), plus its titles, summary, interventions and arms to help read them. It also gets the member tables' column names, so it knows what claims can check, and the results of its own lookups. No member data is sent.</p>
+              <h3>Cost</h3>
+              <p id="cr-cost">Each run calls Claude Opus 5.5 and costs roughly $0.20–0.50. Results are kept for a day, so reopening this step is free.</p>
+            </div>
+          </div>
+          <div class="cr-actions">
+            <button type="button" class="primary" id="cr-run">Build with AI pharmacist</button>
+            <span class="muted" id="cr-run-note"></span>
+          </div>
+        </section>
+
+        <details class="panel cr-text" id="cr-text" open hidden>
+          <summary>
+            <span class="cr-text-title">The eligibility criteria the pharmacist reads</span>
+            <span class="muted cr-text-note" id="cr-text-note">As published on ClinicalTrials.gov. This is the only text rules can come from.</span>
+          </summary>
+          <div id="cr-text-body"></div>
+        </details>
+
+        <section class="panel cr-live" id="cr-live" hidden aria-live="polite">
+          <div class="cr-live-head">
+            <div class="spinner" id="cr-spinner" role="presentation"></div>
+            <h3 id="cr-status">Starting…</h3>
+          </div>
+          <ol class="activity" id="cr-activity"></ol>
+        </section>
+
+        <div id="cr-error" class="status-msg error" hidden></div>
+
+        <div id="cr-body" hidden>
+          <section class="panel result-panel" aria-labelledby="cr-result-title">
+            <div class="cr-result-head">
+              <h3 id="cr-result-title">Result</h3>
+              <button type="button" class="ghost" id="cr-rerun">Run again</button>
+            </div>
+            <div class="group-chips" id="cr-groups"></div>
+            <p id="cr-summary" class="result-summary"></p>
+            <p class="muted small-note" id="cr-meta"></p>
+          </section>
+
+          <div id="cr-sections"></div>
+
+          <details class="panel rules" id="cr-log-panel">
+            <summary><h3>Every lookup the pharmacist made</h3></summary>
+            <ol class="tool-log" id="cr-log"></ol>
+          </details>
+
+          <details class="panel rules" id="cr-notes-panel">
+            <summary><h3>The pharmacist's progress notes</h3></summary>
+            <ol class="notes-list" id="cr-notes"></ol>
+          </details>
+
+          <section class="panel" aria-labelledby="cr-def-title">
+            <div class="panel-head table-head">
+              <div>
+                <h3 id="cr-def-title">Filter definition</h3>
+                <p class="muted">Only the rules marked “Checked from claims” are applied. Runs against <code>members</code>, <code>member_diagnoses</code> (every diagnosis date), <code>member_prescriptions</code> (last fill date per NDC) and the <code>ndc_lookup</code> reference table. <a href="/data-schema">See the expected tables</a>.</p>
+              </div>
+              <button type="button" class="ghost" id="cr-copy-sql">Copy SQL</button>
+            </div>
+            <pre class="code-block" id="cr-sql"></pre>
+            <details class="json-details">
+              <summary>Show as JSON</summary>
+              <pre class="code-block" id="cr-json"></pre>
+            </details>
+          </section>
+        </div>
+
+        <div class="step-next">
+          <a href="#age-sex" class="ghost as-link">Back to step 2</a>
+          <div class="step-next-right">
+            <div>
+              <p class="step-next-label">Next step</p>
+              <p class="step-next-name">Review</p>
+              <p class="muted">Brings the three steps together. Not built yet.</p>
+            </div>
+            <button type="button" class="primary" disabled>Continue to step 4</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/us_tiles.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/eligibility.js"></script>
+</body>
+</html>

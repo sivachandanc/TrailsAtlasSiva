@@ -1,0 +1,174 @@
+from datetime import date
+
+import pytest
+from langchain_core.messages import AIMessage
+
+from tests.webapp.fakes_agent import CONTEXT, FakeIcd, FakeRx, ScriptedChatModel, call, scripted_turns
+from webapp.backend.agents.criteria_graph import build_criteria_graph
+from webapp.backend.services.criteria_filter import quote_found
+
+pytestmark = pytest.mark.anyio
+REF = date(2026, 10, 14)
+
+
+async def run(turns):
+    llm = ScriptedChatModel(turns=turns)
+    graph = build_criteria_graph(llm, FakeIcd(), FakeRx(), model_name="fake", reference_date=REF)
+    state = await graph.ainvoke({"context": CONTEXT}, {"recursion_limit": 100})
+    return state, llm
+
+
+async def test_full_run_groups_validates_and_builds_sql():
+    state, llm = await run(scripted_turns())
+    r = state["result"]
+    by_text = {c.source_text: c for c in r.criteria}
+
+    assert by_text["Adults 18 years or older"].group == "covered"
+    dx = by_text["Pre-existing type 2 diabetes in pregnancy"]
+    assert dx.group == "codable" and [(c.code, c.valid) for c in dx.codes] == [("O24.11", True), ("O24.999", False)]
+    assert "O24.999 isn't a real ICD-10-CM code" in dx.problems[0]
+    assert "icd_code LIKE 'O2411%'" in dx.sql and "O24999" not in dx.sql and "member_id IN" in dx.sql
+    assert dx.tool_call_ids == ["t1", "t3"]  # the search that returned O24.11 and the check that confirmed it
+
+    lab = by_text["HbA1c between 7% and 10%"]
+    assert lab.group == "needs_review" and lab.reason_not_codable
+
+    med = by_text["Use of an SGLT2 inhibitor in the past 3 months"]
+    assert med.group == "codable" and med.drugs[0].ndc_count == 3 and med.drugs[0].ingredients == ["empagliflozin", "dapagliflozin"]
+    assert "member_id NOT IN" in med.sql and "n.atc_class LIKE 'A10BK%'" in med.sql
+    assert "p.last_fill_date >= DATE '2026-07-16'" in med.sql  # last fill within 90 days of the reference date
+
+    fake = by_text["Takes made-up drug daily"]
+    assert fake.group == "flagged" and not fake.quote_found and any("couldn't be confirmed" in p for p in fake.problems)
+
+    assert "member_id IN" in r.sql and "member_id NOT IN" in r.sql and "HbA1c" not in r.sql
+    assert [t.name for t in r.tool_calls] == ["search_icd10cm", "drug_class", "icd10cm_code"]
+    assert r.notes == ["Looking up the diabetes codes and the drug class."]
+    assert r.usage["input_tokens"] == 3700 and r.usage["llm_calls"] == 3
+    assert r.agent_summary.startswith("Pregnant women")
+    # The model saw the trial text and earlier steps, never member data
+    first_user = llm.seen[0][1].content
+    assert "Pre-existing type 2 diabetes in pregnancy" in first_user and "E11, O24" in first_user
+
+
+async def test_text_answer_gets_one_reminder_then_error():
+    state, _ = await run([AIMessage(content="Here are the rules..."), AIMessage(content="As I said...")])
+    assert state["error"].startswith("The model answered in text twice") and "result" not in state
+
+
+async def test_text_then_submit_after_reminder():
+    turns = scripted_turns()
+    state, llm = await run([AIMessage(content="Done reading.")] + turns)
+    assert state["result"].criteria and "Please finish by calling submit_criteria" in llm.seen[1][-1].content
+
+
+async def test_invalid_submission_is_sent_back_to_the_model():
+    bad = AIMessage(content="", tool_calls=[call("submit_criteria", {"criteria": [{"source_text": "x"}]}, "bad")])
+    state, llm = await run([bad] + scripted_turns())
+    # The validation error went back as a tool result and the model tried again
+    assert any(getattr(m, "tool_call_id", None) == "bad" and m.status == "error" for m in llm.seen[1])
+    assert state["result"].criteria
+
+
+async def test_refusal_stops_with_a_message():
+    refused = AIMessage(content="", response_metadata={"stop_reason": "refusal"})
+    state, _ = await run([refused])
+    assert state["error"] == "The model declined to review these criteria."
+
+
+def test_quote_matching():
+    text = "Inclusion Criteria:\n\n* Male or non-pregnant female \\> / = 18 years of age"
+    assert quote_found("male or non-pregnant female > / = 18 years of age", text)
+    assert quote_found("Male or non pregnant female 18 years of age at enrollment", text) is False
+    assert not quote_found("", text)
+
+
+# ---------- member schema, windows and the prompt ----------
+
+from webapp.backend.agents.member_schema import DIAGNOSES, PRESCRIPTIONS  # noqa: E402
+from webapp.backend.agents.prompts import SYSTEM_PROMPT, user_message  # noqa: E402
+from webapp.backend.services.criteria_filter import build_criteria_filter  # noqa: E402
+
+ELIG = "Inclusion Criteria:\n* Type 2 diabetes diagnosed at least 6 months ago\n* On metformin for at least 3 months"
+
+
+async def finalize(criteria):
+    ctx = {**CONTEXT, "eligibility_text": ELIG}
+    return await build_criteria_filter(submitted={"criteria": criteria}, context=ctx, messages=[],
+                                       umls=FakeIcd(), rxnorm=FakeRx(), model="fake", reference_date=REF)
+
+
+def rule(text, window, **kw):
+    return {"source_text": text, "section": "inclusion", "requirement": "must_have", "type": "diagnosis",
+            "codable": True, "icd10cm_codes": ["E11"], "window": window, "rationale": "x", **kw}
+
+
+async def test_at_least_n_days_ago_is_a_code_on_or_before_the_cutoff():
+    r = await finalize([rule("Type 2 diabetes diagnosed at least 6 months ago",
+                             {"type": "days_ago", "min_days_ago": 180})])
+    c = r.criteria[0]
+    assert c.group == "codable" and "AND diagnosis_date <= DATE '2026-04-17'" in c.sql
+    assert f"FROM {DIAGNOSES}" in c.sql and c.window_text.startswith("Dated at least 180 days ago")
+
+
+async def test_a_range_window_bounds_both_ends():
+    r = await finalize([rule("Type 2 diabetes", {"type": "days_ago", "min_days_ago": 365, "max_days_ago": 730})])
+    c = r.criteria[0]
+    assert "diagnosis_date >= DATE '2024-10-14'" in c.sql and "diagnosis_date <= DATE '2025-10-14'" in c.sql
+    assert c.window_text == "Dated between 365 and 730 days ago (2024-10-14 to 2025-10-14)" and not c.approximate
+
+
+async def test_an_approximated_event_is_applied_and_flagged_for_review():
+    r = await finalize([rule("Type 2 diabetes", {"type": "event", "event": "this pregnancy", "max_days_ago": 365,
+                                                 "approximation": "This pregnancy = last 365 days."})])
+    c = r.criteria[0]
+    assert c.group == "codable" and c.approximate and "diagnosis_date >= DATE '2025-10-14'" in r.sql
+    assert "this pregnancy" in c.window_text and "reviewer confirms" in c.window_text
+
+
+async def test_an_open_ended_event_goes_to_review():
+    r = await finalize([rule("Type 2 diabetes", {"type": "event", "event": "since surgery"})])
+    assert r.criteria[0].group == "needs_review" and "WHERE" not in r.sql
+
+
+async def test_a_backwards_window_is_flagged():
+    r = await finalize([rule("Type 2 diabetes", {"type": "days_ago", "min_days_ago": 730, "max_days_ago": 365})])
+    assert r.criteria[0].group == "flagged" and "backwards" in r.criteria[0].problems[0]
+
+
+async def test_drug_duration_needs_review_because_only_the_last_fill_is_stored():
+    r = await finalize([{"source_text": "On metformin for at least 3 months", "section": "inclusion",
+                         "requirement": "must_have", "type": "medication", "codable": True,
+                         "drugs": [{"name": "empagliflozin", "rxcui": "1545653"}],
+                         "window": {"type": "days_ago", "min_days_ago": 90}, "rationale": "x"}])
+    c = r.criteria[0]
+    assert c.group == "needs_review" and "most recent fill" in c.reason_not_codable
+    assert "WHERE" not in r.sql  # not applied to the step's filter
+
+
+def test_prompt_describes_the_member_tables_and_background():
+    assert f"{PRESCRIPTIONS}: one row per member and NDC, holding only the most recent fill" in SYSTEM_PROMPT
+    assert "last_fill_date" in SYSTEM_PROMPT and "min_days_ago" in SYSTEM_PROMPT
+    assert "This pregnancy" in SYSTEM_PROMPT and "max_days_ago 365" in SYSTEM_PROMPT
+    msg = user_message({**CONTEXT, "official_title": "A Polypill Strategy", "brief_summary": "Six months of therapy.",
+                        "interventions": [{"type": "DRUG", "name": "Polypill", "other_names": ["Finerenone, Empagliflozin"],
+                                           "description": "A combination capsule"}],
+                        "arms": [{"label": "Polypill", "type": "EXPERIMENTAL", "description": None,
+                                  "interventions": ["Drug: Polypill"]}]})
+    assert "Official title: A Polypill Strategy" in msg and "- DRUG: Polypill (also called Finerenone, Empagliflozin)" in msg
+    assert "- Polypill (EXPERIMENTAL). Receives: Drug: Polypill." in msg
+    # Background comes before the criteria, which are marked as the only source of rules
+    assert msg.index("Background") < msg.index("<<<") and "the only source of rules" in msg
+
+
+def test_member_schema_ddl_runs_and_the_prompt_leaves_out_unused_tables():
+    import duckdb
+    from webapp.backend.agents import member_schema
+    duckdb.connect().execute(member_schema.ddl())
+    text = member_schema.prompt_text()
+    assert "member_prescriptions" in text and "member_pharmacy_fills" not in text
+
+
+def test_prompt_asks_for_progress_updates_the_page_can_show():
+    # Claude Opus 5.5 rarely narrates between tool calls unless asked; without this the notes panel is empty
+    assert "## Progress updates" in SYSTEM_PROMPT and "Before each round of lookups" in SYSTEM_PROMPT

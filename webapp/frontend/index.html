@@ -3,144 +3,70 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Trial Search</title>
+  <title>Trial Atlas</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="top">
-    <div class="top-inner">
-      <h1 class="headline">Open clinical trials in the United States</h1>
-      <p class="lede">Search a condition to see how many trials are enrolling, where they are, and who they're looking for.</p>
+  <header id="nav" class="nav"></header>
 
-      <form id="search-form" class="search" role="search">
-        <div class="field">
-          <label for="source">Source</label>
-          <select id="source" name="source"><option value="clinicaltrials_gov">ClinicalTrials.gov</option></select>
+  <main>
+    <section class="hero">
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <h1 class="hero-title">Every open clinical trial in the US, on one map.</h1>
+          <p class="hero-lede">
+            Search a condition to see how many trials are enrolling, where they are and who they're looking for.
+            Or look up a single trial by its NCT ID.
+          </p>
+          <p class="live-count" id="live-count" aria-live="polite">
+            <span class="live-dot" aria-hidden="true"></span><span id="live-count-text">Checking ClinicalTrials.gov…</span>
+          </p>
+          <div id="hero-search"></div>
+          <div class="try">
+            <span class="muted">Try a condition</span>
+            <a href="/search?condition=diabetes">diabetes</a>
+            <a href="/search?condition=breast%20cancer">breast cancer</a>
+            <a href="/search?condition=asthma">asthma</a>
+            <span class="muted try-gap">or a trial</span>
+            <a href="/trials/NCT06143566">NCT06143566</a>
+          </div>
         </div>
-        <div class="field">
-          <label for="country">Country</label>
-          <select id="country" name="country"><option>United States</option></select>
+        <div class="hero-art" aria-hidden="true">
+          <div class="tile-map hero-map" id="hero-map"></div>
         </div>
-        <div class="field field-grow">
-          <label for="condition">Condition</label>
-          <input id="condition" name="condition" type="search" required minlength="2" maxlength="200"
-                 placeholder="e.g. type 2 diabetes, breast cancer, asthma" autocomplete="off">
-        </div>
-        <button id="search-button" type="submit">Search trials</button>
-      </form>
-
-      <p class="examples" id="examples">
-        Try
-        <button type="button" data-q="diabetes">diabetes</button>
-        <button type="button" data-q="breast cancer">breast cancer</button>
-        <button type="button" data-q="obesity">obesity</button>
-        <button type="button" data-q="asthma">asthma</button>
-        <button type="button" data-q="alzheimer disease">Alzheimer's</button>
-      </p>
-    </div>
-  </header>
-
-  <main id="main" class="main">
-    <section id="status" class="status-msg" aria-live="polite" hidden></section>
-
-    <div id="dashboard" class="dashboard" hidden>
-      <div class="result-head">
-        <h2 id="result-title"></h2>
-        <p id="result-note" class="muted"></p>
       </div>
+    </section>
 
-      <section class="kpis" id="kpis" aria-label="Key numbers"></section>
-
-      <div class="grid">
-        <section class="panel span-8" aria-labelledby="map-title">
-          <div class="panel-head">
-            <h3 id="map-title">Trials by state</h3>
-            <p class="muted" id="map-hint">Select a state to filter the trial list.</p>
-          </div>
-          <div id="tile-map" class="tile-map" role="group" aria-label="Trials by state"></div>
-          <div id="map-legend" class="legend"></div>
-        </section>
-
-        <section class="panel span-4" aria-labelledby="cities-title">
-          <div class="panel-head"><h3 id="cities-title">Cities with the most trials</h3></div>
-          <div class="chart chart-tall" id="chart-cities"></div>
-        </section>
-
-        <section class="panel span-6" aria-labelledby="conditions-title">
-          <div class="panel-head">
-            <h3 id="conditions-title">Conditions studied</h3>
-            <p class="muted">MeSH terms assigned by NLM. A trial can count toward several.</p>
-          </div>
-          <div class="chart chart-tall" id="chart-conditions"></div>
-        </section>
-
-        <section class="panel span-3" aria-labelledby="phase-title">
-          <div class="panel-head"><h3 id="phase-title">Phase</h3></div>
-          <div class="chart" id="chart-phases"></div>
-        </section>
-
-        <section class="panel span-3" aria-labelledby="who-title">
-          <div class="panel-head"><h3 id="who-title">Who can join</h3></div>
-          <div class="chart chart-short" id="chart-sex"></div>
-          <div class="chart chart-short" id="chart-ages"></div>
-        </section>
-
-        <section class="panel span-8" aria-labelledby="timing-title">
-          <div class="panel-head">
-            <h3 id="timing-title">Timing</h3>
-            <p class="muted">Trial start dates over the last two years and next six months, and primary completions due in the next year.</p>
-          </div>
-          <div class="chart" id="chart-timing"></div>
-        </section>
-
-        <section class="panel span-4" aria-labelledby="design-title">
-          <div class="panel-head"><h3 id="design-title">What's being tested, and by whom</h3></div>
-          <div class="chart chart-short" id="chart-interventions"></div>
-          <div class="chart chart-short" id="chart-sponsors"></div>
-        </section>
-
-        <section class="panel span-12" aria-labelledby="table-title">
-          <div class="panel-head table-head">
-            <div>
-              <h3 id="table-title">Trials</h3>
-              <p class="muted" id="table-count"></p>
-            </div>
-            <div class="table-tools">
-              <span id="state-chip" class="chip" hidden></span>
-              <label class="visually-hidden" for="table-filter">Filter trials</label>
-              <input id="table-filter" type="search" placeholder="Filter by title, NCT ID or condition">
-            </div>
-          </div>
-          <div class="table-scroll" id="table-scroll">
-            <table class="trials">
-              <thead>
-                <tr>
-                  <th data-sort="id">NCT ID</th>
-                  <th data-sort="title" class="col-title">Title</th>
-                  <th data-sort="status">Status</th>
-                  <th data-sort="phase">Phase</th>
-                  <th>Conditions</th>
-                  <th data-sort="open_us_sites" class="num">Open US sites</th>
-                  <th>States</th>
-                  <th data-sort="enrollment" class="num">Enrollment</th>
-                  <th data-sort="start_date">Start</th>
-                  <th data-sort="primary_completion_date">Primary completion</th>
-                </tr>
-              </thead>
-              <tbody id="table-body"></tbody>
-            </table>
-            <div id="table-sentinel" class="sentinel"></div>
-          </div>
-        </section>
+    <section class="how">
+      <div class="how-inner">
+        <h2>How it works</h2>
+        <ol class="steps">
+          <li>
+            <h3>Search a condition or a trial ID</h3>
+            <p>Results come straight from ClinicalTrials.gov when you search. Nothing is stored.</p>
+          </li>
+          <li>
+            <h3>See where trials are and who can join</h3>
+            <p>Trials by state and city, conditions studied, phases, age groups and timing, for every open US trial that matches.</p>
+          </li>
+          <li>
+            <h3>Open a trial for the details</h3>
+            <p>Eligibility criteria side by side, every site with its status, what's being tested and who to contact.</p>
+          </li>
+        </ol>
       </div>
-    </div>
+    </section>
   </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <footer class="footer">
+    <p>Data from <a href="https://clinicaltrials.gov" rel="noopener" target="_blank">ClinicalTrials.gov</a>, the US National Library of Medicine's trial registry. Recruiting and not-yet-recruiting trials with at least one US site.</p>
+  </footer>
+
   <script src="/us_tiles.js"></script>
-  <script src="/app.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/home.js"></script>
 </body>
 </html>

@@ -2,10 +2,10 @@
 
 import httpx
 
-from webapp.backend.sources.base import SourceError, TrialSource
+from webapp.backend.sources.base import NCT_ID, SourceError, TrialNotFound, TrialSource
 from webapp.backend.sources.clinicaltrials_gov import ClinicalTrialsGovSource
 
-__all__ = ["SourceError", "TrialSource", "build_sources"]
+__all__ = ["NCT_ID", "SourceError", "TrialNotFound", "TrialSource", "build_sources"]
 
 
 def build_sources(client: httpx.AsyncClient) -> dict[str, TrialSource]:

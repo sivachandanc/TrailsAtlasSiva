@@ -1,0 +1,172 @@
+{
+ "protocolSection": {
+  "identificationModule": {
+   "nctId": "NCT06143566",
+   "briefTitle": "Polypill for Prevention of Cardiomyopathy",
+   "officialTitle": "Polypill Strategy for Prevention of Cardiomyopathy Among Patients With Diabetes at Risk of Heart Failure",
+   "acronym": "PolyPreventHF"
+  },
+  "statusModule": {
+   "overallStatus": "RECRUITING",
+   "startDateStruct": {
+    "date": "2024-03-11"
+   },
+   "primaryCompletionDateStruct": {
+    "date": "2027-09-01"
+   },
+   "completionDateStruct": {
+    "date": "2027-12-01"
+   },
+   "studyFirstPostDateStruct": {
+    "date": "2023-11-22"
+   },
+   "lastUpdatePostDateStruct": {
+    "date": "2026-08-04"
+   }
+  },
+  "sponsorCollaboratorsModule": {
+   "leadSponsor": {
+    "name": "University of Texas Southwestern Medical Center",
+    "class": "OTHER"
+   }
+  },
+  "descriptionModule": {
+   "briefSummary": "This study will investigate the utility of a polypill-based strategy for patients with type 2 diabetes mellitus and high risk of heart failure (HF), as assessed via the WATCH-DM risk score. Polypill therapy will consist of empagliflozin 12.5 mg, losartan 25, 50 or 100 mg, and finerenone 10 mg daily. The study duration is 6 months, and participants will be randomized to either polypill therapy or simultaneous prescription of the individual drugs. The primary outcome is change in peak VO2 and adherence to usual care. The investigators hypothesize that the use of a polypill is feasible and improves medication adherence and peak VO2 as compared to those receiving usual care."
+  },
+  "conditionsModule": {
+   "conditions": [
+    "Type 2 Diabetes",
+    "High Blood Pressure"
+   ],
+   "keywords": [
+    "Type 2 Diabetes",
+    "Diabetic Cardiomyopathy",
+    "Hypertension",
+    "Polypill"
+   ]
+  },
+  "designModule": {
+   "studyType": "INTERVENTIONAL",
+   "phases": [
+    "PHASE1",
+    "PHASE2"
+   ],
+   "designInfo": {
+    "primaryPurpose": "TREATMENT"
+   },
+   "enrollmentInfo": {
+    "count": 200
+   }
+  },
+  "armsInterventionsModule": {
+   "armGroups": [
+    {
+     "label": "Polypill",
+     "type": "EXPERIMENTAL",
+     "description": "Participants will take a polypill containing finerenone 10 mg, empagliflozin 12.5 mg, and losartan (25, 50 mg, or 100 mg) daily.",
+     "interventionNames": [
+      "Drug: Polypill"
+     ]
+    },
+    {
+     "label": "Combined prescription of the individual medications",
+     "type": "ACTIVE_COMPARATOR",
+     "description": "Participants will be initiated on an SGLT2i, ARB, or finerenone if they are not already on the medication class.",
+     "interventionNames": [
+      "Drug: Combined prescription of the individual medications"
+     ]
+    }
+   ],
+   "interventions": [
+    {
+     "type": "DRUG",
+     "name": "Polypill",
+     "description": "A combination of finerenone 10 mg, empagliflozin 12.5 mg, and losartan 50 mg or 100 mg within a polycapsule.",
+     "otherNames": [
+      "(Finerenone, Empagliflozin, Losartan)"
+     ]
+    },
+    {
+     "type": "DRUG",
+     "name": "Combined prescription of the individual medications",
+     "description": "We will initiate participants on an ARB, SGLT2i, and Finerenone if they are not in the polypill arm."
+    }
+   ]
+  },
+  "outcomesModule": {
+   "primaryOutcomes": [
+    {
+     "measure": "Oxygen uptake during peak exercise (Peak VO2)",
+     "description": "The ability of a polypill to improve or prevent declines in exercise capacity as measured by changes in peak oxygen uptake at exercise will be assessed.",
+     "timeFrame": "Baseline, 3-month, and 6-month"
+    }
+   ],
+   "secondaryOutcomes": [
+    {
+     "measure": "Urine albumin to creatinine ratio",
+     "description": "The ratio of urinary albumin to creatinine will be measured.",
+     "timeFrame": "Baseline, 3 month, and 6 month"
+    }
+   ]
+  },
+  "eligibilityModule": {
+   "eligibilityCriteria": "Inclusion Criteria:\n\n* Patients with Type 2 DM\n* History of chronic kidney disease, defined as an estimated glomerular filtration rate (eGFR) of 25 to 90 per minute per 1.73 m2 of body-surface area (stage 2 to 4 CKD) with a urinary albumin-to-creatinine ratio (with albumin measured in milligrams and creatinine measured in grams) of less than 5000\n* With either a: High risk of HF as defined by High Watch-DM score (\u226511) or Elevated natriuretic peptides or Diastolic dysfunction or left ventricular hypertrophy on echocardiography\n\nExclusion Criteria:\n\n* eGFR \\< 25\n* Congestive heart failure\n* Hyperkalemia \\> 5.0\n* Contraindication to any component of polypill\n* Pregnancy\n* Creatinine \\>2.0mg/dL in men and \\>1.8mg/dL in women\n* Inability to calculate WATCH-DM score\n* Inability to undergo exercise testing",
+   "sex": "ALL",
+   "minimumAge": "18 Years",
+   "maximumAge": "100 Years",
+   "stdAges": [
+    "ADULT",
+    "OLDER_ADULT"
+   ]
+  },
+  "contactsLocationsModule": {
+   "centralContacts": [
+    {
+     "name": "Ambarish Pandey, MD, MSCS",
+     "role": "CONTACT",
+     "phone": "214-645-2101",
+     "email": "ambarish.pandey@utsouthwestern.edu"
+    }
+   ],
+   "overallOfficials": [
+    {
+     "name": "Ambarish Pandey, MD, MSCS",
+     "affiliation": "UT Southwestern",
+     "role": "PRINCIPAL_INVESTIGATOR"
+    }
+   ],
+   "locations": [
+    {
+     "facility": "UT Southwestern Medical Center",
+     "status": "RECRUITING",
+     "city": "Dallas",
+     "state": "Texas",
+     "zip": "75235",
+     "country": "United States",
+     "geoPoint": {
+      "lat": 32.78306,
+      "lon": -96.80667
+     }
+    }
+   ]
+  }
+ },
+ "derivedSection": {
+  "conditionBrowseModule": {
+   "meshes": [
+    {
+     "id": "D003924",
+     "term": "Diabetes Mellitus, Type 2"
+    },
+    {
+     "id": "D006973",
+     "term": "Hypertension"
+    },
+    {
+     "id": "D058065",
+     "term": "Diabetic Cardiomyopathies"
+    }
+   ]
+  }
+ }
+}
