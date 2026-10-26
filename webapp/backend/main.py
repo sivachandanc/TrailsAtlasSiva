@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -36,6 +36,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Trial Atlas", lifespan=lifespan)
 app.include_router(router, prefix="/api")
+
+
+@app.middleware("http")
+async def revalidate_frontend(request: Request, call_next):
+    # Without this, browsers may keep running an old script against a newer page after a change;
+    # no-cache makes them check the ETag on every load (a cheap 304 when nothing changed)
+    response = await call_next(request)
+    if not request.url.path.startswith("/api"):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
 
 
 @app.get("/health", include_in_schema=False)

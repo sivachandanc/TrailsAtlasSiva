@@ -46,9 +46,10 @@ async def test_full_run_groups_validates_and_builds_sql():
     assert r.notes == ["Looking up the diabetes codes and the drug class."]
     assert r.usage["input_tokens"] == 3700 and r.usage["llm_calls"] == 3
     assert r.agent_summary.startswith("Pregnant women")
-    # The model saw the trial text and earlier steps, never member data
+    # The model saw the trial text and the age/sex step, never member data or condition-derived ICD prefixes
     first_user = llm.seen[0][1].content
-    assert "Pre-existing type 2 diabetes in pregnancy" in first_user and "E11, O24" in first_user
+    assert "Pre-existing type 2 diabetes in pregnancy" in first_user and "Step 1, age and sex: age 18 years and older" in first_user
+    assert "diagnoses" not in first_user.lower()
 
 
 async def test_text_answer_gets_one_reminder_then_error():

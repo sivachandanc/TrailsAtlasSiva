@@ -5,16 +5,10 @@ from webapp.backend.api import routes
 from webapp.backend.main import app
 from webapp.backend.models import Site, Trial, TrialDetail
 from webapp.backend.sources.base import SourceError, TrialNotFound
-from webapp.backend.terminology.umls import UmlsNotConfigured
 import json
 
 from tests.webapp.fakes_agent import ELIGIBILITY, FakeIcd, FakeRx, ScriptedChatModel, scripted_turns
-from tests.webapp.test_diagnosis_filter import FakeUmls
 from webapp.backend.agents.llm import LlmNotConfigured
-
-
-class FullFakeUmls(FakeUmls, FakeIcd):
-    """Step 1 lookups plus the ICD-10-CM tools the agent uses."""
 
 
 class FakeSource:
@@ -55,12 +49,11 @@ class FakeSource:
 @pytest.fixture
 def client_with():
     def make(source, umls=None, llm_factory=None):
-        umls = umls or FullFakeUmls()
+        umls = umls or FakeIcd()
         app.dependency_overrides[routes.get_rxnorm] = lambda: FakeRx()
         app.dependency_overrides[routes.get_llm_factory] = lambda: (
             llm_factory or (lambda: ScriptedChatModel(turns=scripted_turns())))
-        for cache in (routes._cache, routes._trial_cache, routes._count_cache, routes._diagnosis_cache,
-                      routes._criteria_cache):
+        for cache in (routes._cache, routes._trial_cache, routes._count_cache, routes._criteria_cache):
             cache._items.clear()
         routes._criteria_running.clear()
         app.dependency_overrides[routes.get_sources] = lambda: {source.id: source}
@@ -68,7 +61,7 @@ def client_with():
         return TestClient(app)
     yield make
     app.dependency_overrides.clear()
-    for cache in (routes._cache, routes._trial_cache, routes._count_cache, routes._diagnosis_cache, routes._criteria_cache):
+    for cache in (routes._cache, routes._trial_cache, routes._count_cache, routes._criteria_cache):
         cache._items.clear()
 
 
@@ -165,28 +158,6 @@ def test_demographic_filter(client_with):
 ])
 def test_demographic_filter_errors(client_with, trial_id, params, status):
     assert client_with(FakeSource()).get(f"/api/trials/{trial_id}/filters/demographics", params=params).status_code == status
-
-
-def test_diagnosis_filter(client_with):
-    body = client_with(FakeSource()).get("/api/trials/nct05909046/filters/diagnoses").json()
-    assert body["trial_id"] == "NCT05909046" and [p["prefix"] for p in body["prefixes"]] == ["O24"]
-    assert body["mesh"][0]["match"] == "id+term" and body["conditions"][0]["text"] == "Gestational Diabetes"
-    assert body["rules"] and "LIKE 'O24%'" in body["sql"]
-
-
-class NoKeyUmls(FakeUmls):
-    async def mesh_lookup(self, mesh_id, term):
-        raise UmlsNotConfigured("ICD lookups need a UMLS API key. Add UMLS_API_KEY to the .env file.")
-
-
-@pytest.mark.parametrize("trial_id, status", [("NCT09999999", 404), ("abc", 422)])
-def test_diagnosis_filter_errors(client_with, trial_id, status):
-    assert client_with(FakeSource()).get(f"/api/trials/{trial_id}/filters/diagnoses").status_code == status
-
-
-def test_diagnosis_filter_without_key(client_with):
-    r = client_with(FakeSource(), NoKeyUmls()).get("/api/trials/NCT05909046/filters/diagnoses")
-    assert r.status_code == 503 and "UMLS_API_KEY" in r.json()["detail"]
 
 
 def sse_events(text):

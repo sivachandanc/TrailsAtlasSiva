@@ -271,73 +271,6 @@ class DemographicFilter(BaseModel):
     definition: dict  # the same filter as structured JSON
 
 
-# ---- eligibility step: diagnoses (ICD) ----
-
-class CuiRef(BaseModel):
-    cui: str
-    name: str | None = None
-
-
-class IcdCode(BaseModel):
-    code: str  # as UMLS gives it, e.g. "O24.91"
-    name: str | None
-    prefix: str  # what it becomes in the filter, e.g. "O24"
-
-
-class CuiTrace(BaseModel):
-    cui: str
-    name: str | None
-    icd_codes: list[IcdCode]
-    why: str
-
-
-class MeshTrace(BaseModel):
-    mesh_id: str
-    term: str
-    by_id: list[CuiRef]  # concepts found by looking up the MeSH ID
-    by_term: list[CuiRef]  # concepts found by looking up the MeSH term
-    match: str  # "id+term" / "id only" / "none"
-    why: str
-    kept: list[CuiTrace]
-    dropped: list[CuiRef]  # found by the ID but not confirmed by the term
-
-
-class ConditionTrace(BaseModel):
-    text: str
-    why: str
-    found: list[CuiTrace]
-
-
-class PrefixRow(BaseModel):
-    prefix: str  # dot-free, e.g. "O24" or "R7303"
-    display: str  # with the dot, e.g. "O24" or "R73.03"
-    category_name: str | None
-    icd_codes: list[str]
-    contributors: list[str]  # e.g. "MeSH D011254 Pregnancy in Diabetics", "Condition text: Gestational Diabetes"
-    full_length: bool  # R/Z codes kept whole instead of cut to 3 characters
-    why: str
-
-
-class Rule(BaseModel):
-    title: str
-    text: str
-
-
-class DiagnosisFilter(BaseModel):
-    trial_id: str
-    title: str | None
-    status: str | None
-    skipped: bool  # no ICD codes found: the step removes no one
-    summary: str
-    mesh: list[MeshTrace]
-    conditions: list[ConditionTrace]
-    prefixes: list[PrefixRow]
-    rules: list[Rule]
-    warnings: list[str]
-    sql: str
-    definition: dict
-
-
 # ---- eligibility step: criteria (built by the pharmacist agent) ----
 
 class AgentDrug(BaseModel):
@@ -383,7 +316,7 @@ class AgentCriterion(BaseModel):
                                                  "each also covers its more specific codes")
     drugs: list[AgentDrug] = Field(default_factory=list)
     window: TimeWindow
-    covered_by_step: Literal["diagnoses", "age_sex"] | None = Field(
+    covered_by_step: Literal["age_sex"] | None = Field(
         default=None, description="Set when an earlier step already handles this rule")
     reason_not_codable: str | None = Field(default=None, description="Why claims can't answer it, when codable is false")
     rationale: str = Field(description="One or two plain sentences: how you read the rule and why you chose these codes, drugs and window")

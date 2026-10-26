@@ -30,6 +30,8 @@ UMLS_MAX_CONCURRENT = 8  # stay well under UMLS's request rate limit
 ICD_SOURCE = "ICD10CM"
 
 # The eligibility-criteria agent (LangGraph + Claude). The key comes from .env (ANTHROPIC_API_KEY=...).
-CRITERIA_MODEL = "claude-opus-5-5"
+# Optional overrides in .env: CRITERIA_MODEL and ANTHROPIC_BASE_URL (unset = defaults below).
+CRITERIA_MODEL = os.environ.get("CRITERIA_MODEL") or "claude-opus-5-5"
 CRITERIA_EFFORT = "high"
 ANTHROPIC_API_KEY_SET = bool(os.environ.get("ANTHROPIC_API_KEY"))
+ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL") or None

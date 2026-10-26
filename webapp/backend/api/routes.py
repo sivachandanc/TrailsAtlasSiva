@@ -13,10 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from webapp.backend import config
 from webapp.backend.models import (
-    CriteriaFilter, DemographicFilter, DiagnosisFilter, MemberColumn, MemberSchema, MemberTable,
+    CriteriaFilter, DemographicFilter, MemberColumn, MemberSchema, MemberTable,
     SearchResult, SourceOption, TrialDashboard,
 )
-from webapp.backend.services.diagnosis_filter import build_diagnosis_filter
 from webapp.backend.services.eligibility_filters import build_demographic_filter
 from webapp.backend.services.cache import TTLCache
 from webapp.backend.services.summary import summarize
@@ -32,7 +31,6 @@ router = APIRouter(tags=["search"])
 _cache: TTLCache[SearchResult] = TTLCache(config.CACHE_TTL_SECONDS)
 _trial_cache: TTLCache[TrialDashboard] = TTLCache(config.CACHE_TTL_SECONDS)
 _count_cache: TTLCache[int] = TTLCache(60 * 60)
-_diagnosis_cache: TTLCache[DiagnosisFilter] = TTLCache(config.CACHE_TTL_SECONDS)
 # Agent results cost money to produce, so they're kept for a day (in memory only)
 _criteria_cache: TTLCache[CriteriaFilter] = TTLCache(24 * 60 * 60)
 _criteria_running: set[tuple] = set()
@@ -146,28 +144,6 @@ async def get_trial(sources: Sources, trial_id: str, source: str = "clinicaltria
     return await load_trial(sources, trial_id, source)
 
 
-@router.get("/trials/{trial_id}/filters/diagnoses", tags=["eligibility filters"])
-async def diagnosis_filter(sources: Sources, umls: Umls, trial_id: str,
-                           source: str = "clinicaltrials_gov") -> DiagnosisFilter:
-    """Step 1 of the filter builder: ICD-10-CM prefixes from the trial's MeSH conditions and
-    condition text, with every lookup along the way."""
-    dashboard = await load_trial(sources, trial_id, source)
-    try:
-        return await diagnoses_for(dashboard, umls, source)
-    except UmlsNotConfigured as exc:
-        raise HTTPException(503, str(exc)) from exc
-    except UmlsError as exc:
-        raise HTTPException(502, f"The ICD lookup didn't complete. {exc}") from exc
-
-
-async def diagnoses_for(dashboard: TrialDashboard, umls: UmlsClient, source: str) -> DiagnosisFilter:
-    key = (source, dashboard.trial.id)
-    if (cached := _diagnosis_cache.get(key)) is None:
-        cached = await build_diagnosis_filter(dashboard.trial, umls)
-        _diagnosis_cache.set(key, cached)
-    return cached
-
-
 @router.get("/trials/{trial_id}/filters/demographics", tags=["eligibility filters"])
 async def demographic_filter(sources: Sources, trial_id: str, source: str = "clinicaltrials_gov",
                              reference_date: date | None = None) -> DemographicFilter:
@@ -195,10 +171,10 @@ async def open_trial_count(sources: Sources, source: str = "clinicaltrials_gov",
 
 @router.get("/trials/{trial_id}/filters/criteria", tags=["eligibility filters"])
 async def criteria_filter(sources: Sources, trial_id: str, source: str = "clinicaltrials_gov") -> CriteriaFilter:
-    """Step 3 result from an earlier run (kept in memory for a day). 404 until it's been built."""
+    """Step 2 result from an earlier run (kept in memory for a day). 404 until it's been built."""
     dashboard = await load_trial(sources, trial_id, source)
     if (cached := _criteria_cache.get((source, dashboard.trial.id))) is None:
-        raise HTTPException(404, "Step 3 hasn't been built for this trial yet.")
+        raise HTTPException(404, "Step 2 hasn't been built for this trial yet.")
     return cached
 
 
@@ -248,21 +224,16 @@ async def run_criteria_agent(sources: Sources, umls: Umls, rxnorm: RxNorm, make_
     if not trial.eligibility_criteria:
         raise HTTPException(422, "This trial has no eligibility criteria text to read.")
     if key in _criteria_running:
-        raise HTTPException(409, "Step 3 is already being built for this trial. Wait for it to finish.")
+        raise HTTPException(409, "Step 2 is already being built for this trial. Wait for it to finish.")
     try:
         llm = make_llm()
     except LlmNotConfigured as exc:
         raise HTTPException(503, str(exc)) from exc
 
     demographics = build_demographic_filter(trial, date.today())
-    try:
-        dx = await diagnoses_for(dashboard, umls, source)
-        prefixes = [p.display for p in dx.prefixes]
-    except (UmlsError, UmlsNotConfigured):
-        prefixes = []  # step 1 unavailable; the agent still works without it
     context = {
         "trial_id": trial.id, "title": trial.title, "conditions": trial.conditions,
-        "diagnosis_prefixes": prefixes, "age_rule": demographics.age.rule, "sex_rule": demographics.sex.rule,
+        "age_rule": demographics.age.rule, "sex_rule": demographics.sex.rule,
         "study_population": trial.study_population, "eligibility_text": trial.eligibility_criteria,
         # Background that helps interpret the criteria ("the study drug" etc.); never a source of rules
         "official_title": trial.official_title, "brief_summary": trial.brief_summary,

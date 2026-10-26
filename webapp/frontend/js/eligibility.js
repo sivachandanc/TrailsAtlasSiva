@@ -1,16 +1,16 @@
 "use strict";
 // Eligibility filter builder (/trials/NCT.../eligibility).
-// Step 1: diagnoses (ICD-10-CM), step 2: age and sex, step 3: eligibility criteria (AI pharmacist). One step is shown at a time; the URL hash picks it.
+// Step 1: age and sex, step 2: eligibility criteria (AI pharmacist). One step is shown at a time; the URL hash picks it.
 
 const parts = location.pathname.split("/");
 const trialId = decodeURIComponent(parts[2] || "");
-const STEPS = ["diagnoses", "age-sex", "criteria"];
+const STEPS = ["age-sex", "criteria"];
 const api = (path) => `/api/trials/${encodeURIComponent(trialId)}/filters/${path}`;
 
 mountNav({ active: "lookup", withSearch: true, search: { mode: "nct", value: trialId } });
 $("#back").href = `/trials/${encodeURIComponent(trialId)}`;
 
-const data = { diagnoses: null, demographics: null, criteria: null };
+const data = { demographics: null, criteria: null };
 
 async function getJson(url) {
   const res = await fetch(url);
@@ -23,7 +23,7 @@ async function getJson(url) {
 
 function currentStep() {
   const h = location.hash.slice(1);
-  return STEPS.includes(h) ? h : "diagnoses";
+  return STEPS.includes(h) ? h : "age-sex";
 }
 
 function showStep() {
@@ -59,26 +59,8 @@ window.addEventListener("hashchange", showStep);
   renderAgeSex(data.demographics);
   $("#page").hidden = false;
   showStep();
-  loadDiagnoses();
   loadCriteria();
 })();
-
-async function loadDiagnoses() {
-  const loading = $("#dx-loading");
-  loading.hidden = false;
-  loading.innerHTML = `<div class="spinner" role="presentation"></div>
-    <h2>Looking up this trial's conditions in UMLS</h2><p>Each MeSH condition and condition text is mapped to concepts, then to ICD-10-CM codes. This takes a few seconds the first time.</p>`;
-  try {
-    data.diagnoses = await getJson(api("diagnoses"));
-    renderDiagnoses(data.diagnoses);
-  } catch (err) {
-    const el = $("#dx-error");
-    el.hidden = false;
-    el.innerHTML = `<h2>The ICD lookup didn't complete</h2><p>${escapeHtml(err.message)}</p><p>Step 2 still works without it.</p>`;
-  } finally {
-    loading.hidden = true;
-  }
-}
 
 function renderHeader(f) {
   document.title = `Eligibility filters: ${f.trial_id} · Trial Atlas`;
@@ -87,93 +69,7 @@ function renderHeader(f) {
     (status ? ` <span class="pill ${f.status.toLowerCase().replace(/_/g, "-")}">${escapeHtml(status[0].toUpperCase() + status.slice(1))}</span>` : "");
 }
 
-// ---------- step 1: diagnoses ----------
-
-const MATCH_LABELS = { "id+term": "ID and name agree", "id only": "Kept from the ID", none: "No concept found" };
-
-function cuiChip(c, state = "") {
-  return `<span class="cui-chip ${state}" title="${escapeHtml(c.name || "")}"><b>${escapeHtml(c.cui)}</b> ${escapeHtml(c.name || "")}</span>`;
-}
-
-function prefixChip(p) { return `<span class="prefix-chip">${escapeHtml(p)}</span>`; }
-
-function flowRows(traces) {
-  return traces.map((t) => {
-    const codes = t.icd_codes.length
-      ? t.icd_codes.map((i) => `<li><b>${escapeHtml(i.code)}</b> ${escapeHtml(i.name || "")}</li>`).join("")
-      : "";
-    const prefixes = [...new Set(t.icd_codes.map((i) => i.prefix))];
-    return `
-      <div class="flow-row ${t.icd_codes.length ? "" : "stopped"}">
-        <div class="node"><span class="node-label">Concept</span>${cuiChip(t)}</div>
-        <span class="arrow" aria-hidden="true">→</span>
-        <div class="node"><span class="node-label">ICD-10-CM codes</span>${codes ? `<ul class="code-list">${codes}</ul>` : '<p class="muted">None linked</p>'}</div>
-        <span class="arrow" aria-hidden="true">→</span>
-        <div class="node"><span class="node-label">Prefix</span>${prefixes.length ? prefixes.map((p) => prefixChip(withDot(p))).join(" ") : '<p class="muted">Nothing added</p>'}</div>
-      </div>
-      <p class="flow-why">${escapeHtml(t.why)}</p>`;
-  }).join("");
-}
-
-function withDot(p) { return p.length > 3 ? `${p.slice(0, 3)}.${p.slice(3)}` : p; }
-
-function renderDiagnoses(d) {
-  $("#dx-body").hidden = false;
-  $("#dx-warnings").innerHTML = d.warnings.map((w) => `<p class="banner" role="status">${escapeHtml(w)}</p>`).join("");
-
-  $("#dx-chips").innerHTML = d.skipped
-    ? '<span class="muted">No prefixes: this step is skipped</span>'
-    : d.prefixes.map((p, i) => `${i ? '<span class="or">OR</span>' : ""}${prefixChip(p.display)}`).join("");
-  $("#dx-summary").textContent = d.summary;
-
-  // MeSH traces
-  $("#dx-mesh").innerHTML = d.mesh.length ? d.mesh.map((m) => {
-    const kept = new Set(m.kept.map((k) => k.cui));
-    const chips = (list) => list.length
-      ? list.map((c) => cuiChip(c, kept.has(c.cui) ? "kept" : "dropped")).join("")
-      : '<span class="muted">Nothing found</span>';
-    return `
-      <article class="trace">
-        <header class="trace-input">
-          <span class="tag">MeSH</span><b>${escapeHtml(m.mesh_id)}</b><span>${escapeHtml(m.term)}</span>
-          <span class="match match-${m.match.replace(/[^a-z]+/g, "-")}">${MATCH_LABELS[m.match] || m.match}</span>
-        </header>
-        <div class="lookups">
-          <div><span class="node-label">Looked up by ID</span><div class="chip-row">${chips(m.by_id)}</div></div>
-          <div><span class="node-label">Looked up by name</span><div class="chip-row">${chips(m.by_term)}</div></div>
-        </div>
-        <p class="trace-why">${escapeHtml(m.why)}</p>
-        ${m.kept.length ? `<div class="flow">${flowRows(m.kept)}</div>` : ""}
-      </article>`;
-  }).join("") : '<p class="muted">This trial has no MeSH conditions.</p>';
-
-  // Condition text traces
-  $("#dx-text").innerHTML = d.conditions.length ? d.conditions.map((c) => `
-    <article class="trace ${c.found.some((f) => f.icd_codes.length) ? "" : "trace-stopped"}">
-      <header class="trace-input"><span class="tag">Condition text</span><span>“${escapeHtml(c.text)}”</span></header>
-      <p class="trace-why">${escapeHtml(c.why)}</p>
-      ${c.found.length ? `<div class="flow">${flowRows(c.found)}</div>` : ""}
-    </article>`).join("") : '<p class="muted">The sponsor listed no condition text.</p>';
-
-  // Final prefixes
-  $("#dx-prefixes").innerHTML = d.prefixes.length ? d.prefixes.map((p) => `
-    <tr>
-      <td>${prefixChip(p.display)}</td>
-      <td>${escapeHtml(p.category_name || "")}</td>
-      <td>${p.icd_codes.map(escapeHtml).join(", ")}</td>
-      <td><ul class="contributors">${p.contributors.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul></td>
-      <td>${escapeHtml(p.why)}</td>
-    </tr>`).join("")
-    : '<tr class="table-empty"><td colspan="5">No ICD-10-CM codes, so this step is skipped.</td></tr>';
-
-  $("#dx-rules").innerHTML = d.rules.map((r) => `<div><dt>${escapeHtml(r.title)}</dt><dd>${escapeHtml(r.text)}</dd></div>`).join("");
-  $("#dx-sql").textContent = d.sql;
-  $("#dx-json").textContent = JSON.stringify(d.definition, null, 2);
-}
-
-$("#dx-copy-sql").addEventListener("click", (e) => data.diagnoses && copyText(data.diagnoses.sql, e.currentTarget));
-
-// ---------- step 2: age and sex ----------
+// ---------- step 1: age and sex ----------
 
 function niceDate(iso) {
   const [y, m, d] = iso.split("-").map(Number);
@@ -216,12 +112,12 @@ function renderAgeSex(f) {
 $("#copy-sql").addEventListener("click", (e) => data.demographics && copyText(data.demographics.sql, e.currentTarget));
 
 
-// ---------- step 3: eligibility criteria (AI pharmacist) ----------
+// ---------- step 2: eligibility criteria (AI pharmacist) ----------
 
 const GROUPS = {
   codable: { title: "Checked from claims", text: "Turned into filters. Members must meet every one of these. Rules marked “Approximate timing” use a standard window for an event, so a reviewer confirms the timing." },
   needs_review: { title: "Needs review", text: "Claims can't answer these, so a person checks them. They don't filter anyone out." },
-  covered: { title: "Covered by earlier steps", text: "Already handled by step 1 or step 2." },
+  covered: { title: "Covered by step 1", text: "Already handled by the age and sex step." },
   flagged: { title: "Flagged", text: "Failed a check, so they were left out of the filter. Review them before relying on this step." },
 };
 const TOOL_LABELS = {
@@ -307,7 +203,7 @@ async function loadCriteriaText() {
   renderCriteriaText(data.criteria);
 }
 
-// Links inside step 3 jump within the page; letting them change the hash would switch steps
+// Links inside step 2 jump within the page; letting them change the hash would switch steps
 $("#step-criteria").addEventListener("click", (e) => {
   const a = e.target.closest('a[href^="#"]');
   if (!a || STEPS.includes(a.getAttribute("href").slice(1))) return;
@@ -412,7 +308,7 @@ function showCriteriaError(message) {
   setStatus("Stopped");
   const el = $("#cr-error");
   el.hidden = false;
-  el.innerHTML = `<h2>Step 3 didn't finish</h2><p>${escapeHtml(message)}</p><p><button type="button" class="ghost" id="cr-retry">Try again</button></p>`;
+  el.innerHTML = `<h2>Step 2 didn't finish</h2><p>${escapeHtml(message)}</p><p><button type="button" class="ghost" id="cr-retry">Try again</button></p>`;
   $("#cr-retry").addEventListener("click", runCriteria);
 }
 
@@ -476,7 +372,7 @@ function criterionCard(c, logIndex) {
       ${codes}${drugs}
       <p><span class="node-label">Time window</span>${escapeHtml(c.window_text)}</p>
       ${c.reason_not_codable ? `<p><span class="node-label">Why it needs review</span>${escapeHtml(c.reason_not_codable)}</p>` : ""}
-      ${c.covered_by_step ? `<p><span class="node-label">Covered by</span>${c.covered_by_step === "age_sex" ? "Step 2, age and sex" : "Step 1, diagnoses"}</p>` : ""}
+      ${c.covered_by_step ? `<p><span class="node-label">Covered by</span>Step 1, age and sex</p>` : ""}
       <p><span class="node-label">Why</span>${escapeHtml(c.rationale)}</p>
       ${c.problems.length ? `<ul class="crit-problems">${c.problems.map((p) => `<li>${escapeHtml(p)}</li>`).join("")}</ul>` : ""}
       ${backing}

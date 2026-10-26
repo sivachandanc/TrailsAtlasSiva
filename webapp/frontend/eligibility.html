@@ -26,120 +26,32 @@
 
       <!-- The funnel from the architecture: one dot per filter step. Built steps are links. -->
       <ol class="stepper" aria-label="Filter steps">
-        <li class="step" data-step="diagnoses">
-          <a href="#diagnoses" class="step-link">
-            <span class="step-dot">1</span>
-            <span class="step-name">Diagnoses (ICD)</span>
-            <span class="step-sub"></span>
-          </a>
-        </li>
         <li class="step" data-step="age-sex">
           <a href="#age-sex" class="step-link">
-            <span class="step-dot">2</span>
+            <span class="step-dot">1</span>
             <span class="step-name">Age &amp; sex</span>
             <span class="step-sub"></span>
           </a>
         </li>
         <li class="step" data-step="criteria">
           <a href="#criteria" class="step-link">
-            <span class="step-dot">3</span>
+            <span class="step-dot">2</span>
             <span class="step-name">Eligibility criteria</span>
             <span class="step-sub"></span>
           </a>
         </li>
         <li class="step upcoming">
-          <span class="step-dot">4</span>
+          <span class="step-dot">3</span>
           <span class="step-name">Review</span>
           <span class="step-sub">Coming next</span>
         </li>
       </ol>
 
-      <!-- Step 1: diagnoses -->
-      <section class="step-panel" id="step-diagnoses" aria-labelledby="dx-title" hidden>
-        <div class="step-panel-head">
-          <div>
-            <h2 id="dx-title">Step 1: Diagnoses (ICD-10-CM)</h2>
-            <p class="muted">Turns the trial's conditions into ICD-10-CM codes using UMLS, the US National Library of Medicine's terminology service, and shows every lookup along the way.</p>
-          </div>
-        </div>
-
-        <div id="dx-loading" class="status-msg loading" hidden></div>
-        <div id="dx-error" class="status-msg error" hidden></div>
-
-        <div id="dx-body" hidden>
-          <div id="dx-warnings" class="banners"></div>
-
-          <section class="panel result-panel" aria-labelledby="dx-result-title">
-            <h3 id="dx-result-title">Result</h3>
-            <div class="prefix-chips" id="dx-chips"></div>
-            <p id="dx-summary" class="result-summary"></p>
-          </section>
-
-          <section class="trace-section" aria-labelledby="dx-mesh-title">
-            <div class="trace-head">
-              <h3 id="dx-mesh-title">How we got here: MeSH conditions</h3>
-              <p class="muted">NLM tags each trial with standard MeSH condition terms. Each one is looked up in UMLS by its ID and by its name; the concepts both agree on are kept, then mapped to ICD-10-CM.</p>
-            </div>
-            <div id="dx-mesh" class="traces"></div>
-          </section>
-
-          <section class="trace-section" aria-labelledby="dx-text-title">
-            <div class="trace-head">
-              <h3 id="dx-text-title">How we got here: the sponsor's condition text</h3>
-              <p class="muted">The conditions the sponsor typed in, matched against every UMLS vocabulary (ignoring case, plurals and word order), then mapped to ICD-10-CM.</p>
-            </div>
-            <div id="dx-text" class="traces"></div>
-          </section>
-
-          <section class="panel" aria-labelledby="dx-final-title">
-            <div class="panel-head">
-              <h3 id="dx-final-title">Final ICD-10-CM prefixes</h3>
-              <p class="muted">Every code above, cut to its category and merged. A member passes with any one of these.</p>
-            </div>
-            <div class="table-scroll table-auto">
-              <table class="trials">
-                <thead><tr><th>Prefix</th><th class="col-title">ICD-10-CM category</th><th>From codes</th><th>Contributed by</th><th>Why this prefix</th></tr></thead>
-                <tbody id="dx-prefixes"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <details class="panel rules" id="dx-rules-panel">
-            <summary><h3>Rules used to get here</h3></summary>
-            <dl class="rules-list" id="dx-rules"></dl>
-          </details>
-
-          <section class="panel" aria-labelledby="dx-def-title">
-            <div class="panel-head table-head">
-              <div>
-                <h3 id="dx-def-title">Filter definition</h3>
-                <p class="muted">Ready to run against the planned <code>member_diagnoses</code> table (member_id, code_system, icd_code without dots).</p>
-              </div>
-              <button type="button" class="ghost" id="dx-copy-sql">Copy SQL</button>
-            </div>
-            <pre class="code-block" id="dx-sql"></pre>
-            <details class="json-details">
-              <summary>Show as JSON</summary>
-              <pre class="code-block" id="dx-json"></pre>
-            </details>
-          </section>
-        </div>
-
-        <div class="step-next">
-          <div>
-            <p class="step-next-label">Next step</p>
-            <p class="step-next-name">Age &amp; sex</p>
-            <p class="muted">Keeps members whose age and sex fit the trial's limits.</p>
-          </div>
-          <a href="#age-sex" class="primary as-link">Continue to step 2</a>
-        </div>
-      </section>
-
-      <!-- Step 2: age and sex -->
+      <!-- Step 1: age and sex -->
       <section class="step-panel" id="step-age-sex" aria-labelledby="age-step-title" hidden>
         <div class="step-panel-head">
           <div>
-            <h2 id="age-step-title">Step 2: Age and sex</h2>
+            <h2 id="age-step-title">Step 1: Age and sex</h2>
             <p class="muted">Built from the trial's minimum age, maximum age and sex on ClinicalTrials.gov, with ages as of today.</p>
           </div>
         </div>
@@ -187,23 +99,22 @@
         </div>
 
         <div class="step-next">
-          <a href="#diagnoses" class="ghost as-link">Back to step 1</a>
           <div class="step-next-right">
             <div>
               <p class="step-next-label">Next step</p>
               <p class="step-next-name">Eligibility criteria</p>
               <p class="muted">An AI pharmacist turns the rest of the eligibility text into checks.</p>
             </div>
-            <a href="#criteria" class="primary as-link">Continue to step 3</a>
+            <a href="#criteria" class="primary as-link">Continue to step 2</a>
           </div>
         </div>
       </section>
 
-      <!-- Step 3: eligibility criteria (AI pharmacist) -->
+      <!-- Step 2: eligibility criteria (AI pharmacist) -->
       <section class="step-panel" id="step-criteria" aria-labelledby="cr-title" hidden>
         <div class="step-panel-head">
           <div>
-            <h2 id="cr-title">Step 3: Eligibility criteria</h2>
+            <h2 id="cr-title">Step 2: Eligibility criteria</h2>
             <p class="muted">An AI pharmacist reads each inclusion and exclusion criterion, looks up real ICD-10-CM codes and drugs, and turns what claims can answer into filters. Everything it looked up is shown below.</p>
           </div>
         </div>
@@ -290,14 +201,14 @@
         </div>
 
         <div class="step-next">
-          <a href="#age-sex" class="ghost as-link">Back to step 2</a>
+          <a href="#age-sex" class="ghost as-link">Back to step 1</a>
           <div class="step-next-right">
             <div>
               <p class="step-next-label">Next step</p>
               <p class="step-next-name">Review</p>
-              <p class="muted">Brings the three steps together. Not built yet.</p>
+              <p class="muted">Brings the two steps together. Not built yet.</p>
             </div>
-            <button type="button" class="primary" disabled>Continue to step 4</button>
+            <button type="button" class="primary" disabled>Continue to step 3</button>
           </div>
         </div>
       </section>

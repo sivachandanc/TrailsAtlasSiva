@@ -22,7 +22,7 @@ TABLES = [
         "columns": [("member_id", "VARCHAR", "member ID"),
                     ("birth_date", "DATE", "date of birth"),
                     ("sex", "VARCHAR", "MALE or FEMALE")],
-        "used_for": "Step 2 (age and sex); every filter starts from this table.",
+        "used_for": "Step 1 (age and sex); every filter starts from this table.",
     },
     {
         "name": DIAGNOSES,
@@ -33,7 +33,7 @@ TABLES = [
                     ("code_system", "VARCHAR", "ICD10CM (older claims may be ICD9CM)"),
                     ("icd_code", "VARCHAR", "diagnosis code without the dot, e.g. O2411 for O24.11"),
                     ("diagnosis_date", "DATE", "date of the claim the code appeared on")],
-        "used_for": "Step 1 prefixes and step 3 diagnosis rules: ever, in the last N days, "
+        "used_for": "Step 2 diagnosis rules: ever, in the last N days, "
                     "at least N days ago, or between two times.",
     },
     {
@@ -44,7 +44,7 @@ TABLES = [
         "columns": [("member_id", "VARCHAR", "member ID"),
                     ("ndc", "VARCHAR", "11-digit NDC of the dispensed product, no dashes"),
                     ("last_fill_date", "DATE", "date of the most recent fill of that NDC")],
-        "used_for": "Step 3 medication rules: filled, or not filled, in the last N days.",
+        "used_for": "Step 2 medication rules: filled, or not filled, in the last N days.",
     },
     {
         "name": NDC_LOOKUP,
