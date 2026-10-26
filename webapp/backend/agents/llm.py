@@ -13,6 +13,8 @@ def make_criteria_llm() -> ChatAnthropic:
     if not config.ANTHROPIC_API_KEY_SET:
         raise LlmNotConfigured("The AI pharmacist needs an Anthropic API key. Add ANTHROPIC_API_KEY to the .env file "
                                "and restart the app.")
+    # Only pass a base URL when .env sets one, so the default endpoint is otherwise untouched.
+    endpoint = {"base_url": config.ANTHROPIC_BASE_URL} if config.ANTHROPIC_BASE_URL else {}
     return ChatAnthropic(
         model=config.CRITERIA_MODEL,
         max_tokens=32_000,  # thinking + a long submit_criteria call; streamed so it can't time out
@@ -25,4 +27,5 @@ def make_criteria_llm() -> ChatAnthropic:
         betas=["thinking-display-updates-2026-08-18", "server-side-fallback-2026-07-01"],
         model_kwargs={"fallbacks": "default"},
         max_retries=3,
+        **endpoint,
     )

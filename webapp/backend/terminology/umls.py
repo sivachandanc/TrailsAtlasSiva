@@ -1,8 +1,7 @@
-"""UMLS client for the ICD step: MeSH -> CUI -> ICD-10-CM.
+"""UMLS client for ICD-10-CM lookups (used by the criteria agent's tools).
 
-An async port of internal_core/get_icd_codes.py (copied, not imported, so the app doesn't
-depend on the sandbox). Every call returns enough detail for the page to show how each
-ICD code was reached.
+Started as an async port of internal_core/get_icd_codes.py (copied, not imported, so the app
+doesn't depend on the sandbox).
 """
 
 import asyncio
@@ -10,7 +9,6 @@ import asyncio
 import httpx
 
 from webapp.backend import config
-from webapp.backend.models import CuiRef
 from webapp.backend.services.cache import TTLCache
 
 
@@ -53,58 +51,6 @@ class UmlsClient:
         value = await fetch()
         self._cache.set(key, value)
         return value
-
-    async def search(self, string: str, input_type: str, search_type: str = "exact",
-                     sabs: str | None = "MSH") -> list[CuiRef]:
-        """Concepts (CUIs) for a string. input_type "sourceUi" = a vocabulary's own ID (a MeSH ID),
-        "atom" = a term. sabs limits matches to one vocabulary; None searches all of UMLS."""
-        async def fetch():
-            params = {"string": string, "inputType": input_type, "searchType": search_type,
-                      "returnIdType": "concept"}
-            if sabs:
-                params["sabs"] = sabs
-            response = await self._get("/search/current", params)
-            results = response.json().get("result", {}).get("results", []) if response else []
-            # UMLS returns a single ui "NONE" result when nothing matches
-            return [CuiRef(cui=r["ui"], name=r.get("name")) for r in results if r.get("ui") != "NONE"]
-        return await self._cached(("search", string, input_type, search_type, sabs), fetch)
-
-    async def mesh_lookup(self, mesh_id: str, term: str) -> dict:
-        """CUIs from the MeSH ID and from the MeSH term (exact, MeSH only), and which are kept:
-        the CUIs both lookups agree on; if the term finds nothing in common, the ID's CUIs."""
-        by_id, by_term = await asyncio.gather(self.search(mesh_id, "sourceUi"), self.search(term, "atom"))
-        term_cuis = {c.cui for c in by_term}
-        both = [c for c in by_id if c.cui in term_cuis]
-        if both:
-            return {"by_id": by_id, "by_term": by_term, "kept": both, "match": "id+term"}
-        if by_id:
-            return {"by_id": by_id, "by_term": by_term, "kept": by_id, "match": "id only"}
-        return {"by_id": by_id, "by_term": by_term, "kept": [], "match": "none"}
-
-    async def condition_lookup(self, text: str) -> list[CuiRef]:
-        """Sponsor's condition text: normalizedString tolerates case, plurals and word order;
-        "words" was too loose (it matched e.g. "No evidence of prenatal infection")."""
-        return await self.search(text, "atom", search_type="normalizedString", sabs=None)
-
-    async def icd_codes(self, cui: str) -> list[str]:
-        """ICD-10-CM codes linked to a concept (its ICD-10-CM atoms), e.g. ["O24.91", "O24.919"]."""
-        async def fetch():
-            response = await self._get(f"/content/current/CUI/{cui}/atoms",
-                                       {"sabs": config.ICD_SOURCE, "pageSize": 100})
-            atoms = response.json().get("result", []) if response else []
-            # atom["code"] is a URL like .../source/ICD10CM/E11.9 -> the code is the last segment
-            return list(dict.fromkeys(a["code"].rsplit("/", 1)[-1] for a in atoms))
-        return await self._cached(("icd", cui), fetch)
-
-    async def icd_name(self, code: str) -> str | None:
-        """Official ICD-10-CM name for a code or category ("O24.91", "O24"); None if unknown."""
-        async def fetch():
-            response = await self._get(f"/content/current/source/{config.ICD_SOURCE}/{code}")
-            return response.json().get("result", {}).get("name") if response else ""
-        name = await self._cached(("icd_name", code), fetch)
-        return name or None
-
-    # ---- ICD-10-CM directly (used by the criteria agent's tools) ----
 
     async def search_icd10cm(self, text: str, limit: int = 12) -> list[dict]:
         """ICD-10-CM codes whose names match the words in `text`, e.g. "pre-existing type 2

@@ -1,16 +1,16 @@
 "use strict";
 // Eligibility filter builder (/trials/NCT.../eligibility).
-// Step 1: diagnoses (ICD-10-CM), step 2: age and sex, step 3: eligibility criteria (AI pharmacist). One step is shown at a time; the URL hash picks it.
+// Step 1: age and sex, step 2: eligibility criteria (AI pharmacist), step 3: review (both as one query). One step is shown at a time; the URL hash picks it.
 
 const parts = location.pathname.split("/");
 const trialId = decodeURIComponent(parts[2] || "");
-const STEPS = ["diagnoses", "age-sex", "criteria"];
+const STEPS = ["age-sex", "criteria", "review"];
 const api = (path) => `/api/trials/${encodeURIComponent(trialId)}/filters/${path}`;
 
 mountNav({ active: "lookup", withSearch: true, search: { mode: "nct", value: trialId } });
 $("#back").href = `/trials/${encodeURIComponent(trialId)}`;
 
-const data = { diagnoses: null, demographics: null, criteria: null };
+const data = { demographics: null, criteria: null, review: null };
 
 async function getJson(url) {
   const res = await fetch(url);
@@ -23,7 +23,7 @@ async function getJson(url) {
 
 function currentStep() {
   const h = location.hash.slice(1);
-  return STEPS.includes(h) ? h : "diagnoses";
+  return STEPS.includes(h) ? h : "age-sex";
 }
 
 function showStep() {
@@ -44,6 +44,8 @@ window.addEventListener("hashchange", showStep);
 
 // ---------- load ----------
 
+loadWarehouse();
+
 (async function load() {
   // The age/sex step is quick and tells us whether the trial exists, so it gates the page
   try {
@@ -59,121 +61,17 @@ window.addEventListener("hashchange", showStep);
   renderAgeSex(data.demographics);
   $("#page").hidden = false;
   showStep();
-  loadDiagnoses();
   loadCriteria();
 })();
 
-async function loadDiagnoses() {
-  const loading = $("#dx-loading");
-  loading.hidden = false;
-  loading.innerHTML = `<div class="spinner" role="presentation"></div>
-    <h2>Looking up this trial's conditions in UMLS</h2><p>Each MeSH condition and condition text is mapped to concepts, then to ICD-10-CM codes. This takes a few seconds the first time.</p>`;
-  try {
-    data.diagnoses = await getJson(api("diagnoses"));
-    renderDiagnoses(data.diagnoses);
-  } catch (err) {
-    const el = $("#dx-error");
-    el.hidden = false;
-    el.innerHTML = `<h2>The ICD lookup didn't complete</h2><p>${escapeHtml(err.message)}</p><p>Step 2 still works without it.</p>`;
-  } finally {
-    loading.hidden = true;
-  }
-}
-
 function renderHeader(f) {
-  document.title = `Eligibility filters: ${f.trial_id} · Trial Atlas`;
+  document.title = `Eligibility filters: ${f.trial_id} · Trails-POC`;
   const status = f.status ? f.status.replace(/_/g, " ").toLowerCase() : "";
   $("#trial-line").innerHTML = `<a href="/trials/${f.trial_id}">${f.trial_id}</a> · ${escapeHtml(f.title || "")}` +
     (status ? ` <span class="pill ${f.status.toLowerCase().replace(/_/g, "-")}">${escapeHtml(status[0].toUpperCase() + status.slice(1))}</span>` : "");
 }
 
-// ---------- step 1: diagnoses ----------
-
-const MATCH_LABELS = { "id+term": "ID and name agree", "id only": "Kept from the ID", none: "No concept found" };
-
-function cuiChip(c, state = "") {
-  return `<span class="cui-chip ${state}" title="${escapeHtml(c.name || "")}"><b>${escapeHtml(c.cui)}</b> ${escapeHtml(c.name || "")}</span>`;
-}
-
-function prefixChip(p) { return `<span class="prefix-chip">${escapeHtml(p)}</span>`; }
-
-function flowRows(traces) {
-  return traces.map((t) => {
-    const codes = t.icd_codes.length
-      ? t.icd_codes.map((i) => `<li><b>${escapeHtml(i.code)}</b> ${escapeHtml(i.name || "")}</li>`).join("")
-      : "";
-    const prefixes = [...new Set(t.icd_codes.map((i) => i.prefix))];
-    return `
-      <div class="flow-row ${t.icd_codes.length ? "" : "stopped"}">
-        <div class="node"><span class="node-label">Concept</span>${cuiChip(t)}</div>
-        <span class="arrow" aria-hidden="true">→</span>
-        <div class="node"><span class="node-label">ICD-10-CM codes</span>${codes ? `<ul class="code-list">${codes}</ul>` : '<p class="muted">None linked</p>'}</div>
-        <span class="arrow" aria-hidden="true">→</span>
-        <div class="node"><span class="node-label">Prefix</span>${prefixes.length ? prefixes.map((p) => prefixChip(withDot(p))).join(" ") : '<p class="muted">Nothing added</p>'}</div>
-      </div>
-      <p class="flow-why">${escapeHtml(t.why)}</p>`;
-  }).join("");
-}
-
-function withDot(p) { return p.length > 3 ? `${p.slice(0, 3)}.${p.slice(3)}` : p; }
-
-function renderDiagnoses(d) {
-  $("#dx-body").hidden = false;
-  $("#dx-warnings").innerHTML = d.warnings.map((w) => `<p class="banner" role="status">${escapeHtml(w)}</p>`).join("");
-
-  $("#dx-chips").innerHTML = d.skipped
-    ? '<span class="muted">No prefixes: this step is skipped</span>'
-    : d.prefixes.map((p, i) => `${i ? '<span class="or">OR</span>' : ""}${prefixChip(p.display)}`).join("");
-  $("#dx-summary").textContent = d.summary;
-
-  // MeSH traces
-  $("#dx-mesh").innerHTML = d.mesh.length ? d.mesh.map((m) => {
-    const kept = new Set(m.kept.map((k) => k.cui));
-    const chips = (list) => list.length
-      ? list.map((c) => cuiChip(c, kept.has(c.cui) ? "kept" : "dropped")).join("")
-      : '<span class="muted">Nothing found</span>';
-    return `
-      <article class="trace">
-        <header class="trace-input">
-          <span class="tag">MeSH</span><b>${escapeHtml(m.mesh_id)}</b><span>${escapeHtml(m.term)}</span>
-          <span class="match match-${m.match.replace(/[^a-z]+/g, "-")}">${MATCH_LABELS[m.match] || m.match}</span>
-        </header>
-        <div class="lookups">
-          <div><span class="node-label">Looked up by ID</span><div class="chip-row">${chips(m.by_id)}</div></div>
-          <div><span class="node-label">Looked up by name</span><div class="chip-row">${chips(m.by_term)}</div></div>
-        </div>
-        <p class="trace-why">${escapeHtml(m.why)}</p>
-        ${m.kept.length ? `<div class="flow">${flowRows(m.kept)}</div>` : ""}
-      </article>`;
-  }).join("") : '<p class="muted">This trial has no MeSH conditions.</p>';
-
-  // Condition text traces
-  $("#dx-text").innerHTML = d.conditions.length ? d.conditions.map((c) => `
-    <article class="trace ${c.found.some((f) => f.icd_codes.length) ? "" : "trace-stopped"}">
-      <header class="trace-input"><span class="tag">Condition text</span><span>“${escapeHtml(c.text)}”</span></header>
-      <p class="trace-why">${escapeHtml(c.why)}</p>
-      ${c.found.length ? `<div class="flow">${flowRows(c.found)}</div>` : ""}
-    </article>`).join("") : '<p class="muted">The sponsor listed no condition text.</p>';
-
-  // Final prefixes
-  $("#dx-prefixes").innerHTML = d.prefixes.length ? d.prefixes.map((p) => `
-    <tr>
-      <td>${prefixChip(p.display)}</td>
-      <td>${escapeHtml(p.category_name || "")}</td>
-      <td>${p.icd_codes.map(escapeHtml).join(", ")}</td>
-      <td><ul class="contributors">${p.contributors.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul></td>
-      <td>${escapeHtml(p.why)}</td>
-    </tr>`).join("")
-    : '<tr class="table-empty"><td colspan="5">No ICD-10-CM codes, so this step is skipped.</td></tr>';
-
-  $("#dx-rules").innerHTML = d.rules.map((r) => `<div><dt>${escapeHtml(r.title)}</dt><dd>${escapeHtml(r.text)}</dd></div>`).join("");
-  $("#dx-sql").textContent = d.sql;
-  $("#dx-json").textContent = JSON.stringify(d.definition, null, 2);
-}
-
-$("#dx-copy-sql").addEventListener("click", (e) => data.diagnoses && copyText(data.diagnoses.sql, e.currentTarget));
-
-// ---------- step 2: age and sex ----------
+// ---------- step 1: age and sex ----------
 
 function niceDate(iso) {
   const [y, m, d] = iso.split("-").map(Number);
@@ -216,14 +114,15 @@ function renderAgeSex(f) {
 $("#copy-sql").addEventListener("click", (e) => data.demographics && copyText(data.demographics.sql, e.currentTarget));
 
 
-// ---------- step 3: eligibility criteria (AI pharmacist) ----------
+// ---------- step 2: eligibility criteria (AI pharmacist) ----------
 
 const GROUPS = {
-  codable: { title: "Checked from claims", text: "Turned into filters. Members must meet every one of these. Rules marked “Approximate timing” use a standard window for an event, so a reviewer confirms the timing." },
+  codable: { title: "Checked from claims", text: "Turned into filters. Members must meet every one of these. Rules marked “Approximate timing” use a standard window for an event, so a reviewer confirms the timing. Rules marked “Expert checks timing” filter on the drug alone, and an expert checks the duration, dose or timing." },
   needs_review: { title: "Needs review", text: "Claims can't answer these, so a person checks them. They don't filter anyone out." },
-  covered: { title: "Covered by earlier steps", text: "Already handled by step 1 or step 2." },
+  covered: { title: "Covered by step 1", text: "Already handled by the age and sex step." },
   flagged: { title: "Flagged", text: "Failed a check, so they were left out of the filter. Review them before relying on this step." },
 };
+const MAX_NAMES = 8;  // drug names listed on a rule before "and N more"
 const TOOL_LABELS = {
   search_icd10cm: (a) => `Searched ICD-10-CM for “${a.text}”`,
   icd10cm_code: (a) => `Checked ICD-10-CM code ${a.code}`,
@@ -307,7 +206,7 @@ async function loadCriteriaText() {
   renderCriteriaText(data.criteria);
 }
 
-// Links inside step 3 jump within the page; letting them change the hash would switch steps
+// Links inside step 2 jump within the page; letting them change the hash would switch steps
 $("#step-criteria").addEventListener("click", (e) => {
   const a = e.target.closest('a[href^="#"]');
   if (!a || STEPS.includes(a.getAttribute("href").slice(1))) return;
@@ -327,6 +226,7 @@ async function loadCriteria() {
     if (res.ok) { renderCriteria(await res.json()); return; }
   } catch { /* fall through to the intro */ }
   $("#cr-intro").hidden = false;
+  loadReview();  // step 2 not built: the review shows age and sex only
 }
 
 $("#cr-run").addEventListener("click", runCriteria);
@@ -412,13 +312,14 @@ function showCriteriaError(message) {
   setStatus("Stopped");
   const el = $("#cr-error");
   el.hidden = false;
-  el.innerHTML = `<h2>Step 3 didn't finish</h2><p>${escapeHtml(message)}</p><p><button type="button" class="ghost" id="cr-retry">Try again</button></p>`;
+  el.innerHTML = `<h2>Step 2 didn't finish</h2><p>${escapeHtml(message)}</p><p><button type="button" class="ghost" id="cr-retry">Try again</button></p>`;
   $("#cr-retry").addEventListener("click", runCriteria);
 }
 
 function renderCriteria(r) {
   data.criteria = r;
   renderCriteriaText(r);
+  loadReview();  // the review query now includes step 2's rules
   $("#cr-live").hidden = true;
   $("#cr-intro").hidden = true;
   $("#cr-error").hidden = true;
@@ -459,7 +360,7 @@ function criterionCard(c, logIndex) {
     c.codes.map((x) => `<li class="${x.valid ? "" : "invalid"}"><b>${escapeHtml(x.code)}</b> ${escapeHtml(x.name || "not a real code")}</li>`).join("")}</ul></div>` : "";
   const drugs = c.drugs.length ? `<div><span class="node-label">Drugs</span><ul class="code-list">${c.drugs.map((d) => `
     <li class="${d.valid ? "" : "invalid"}"><b>${escapeHtml(d.atc_class ? `${d.atc_class} ${d.atc_name || d.name}` : d.name)}</b>
-      ${d.valid ? `${escapeHtml(d.ingredients.join(", "))}${d.rxcui ? ` (RxCUI ${escapeHtml(d.rxcui)})` : ""}. ${fmt.format(d.ndc_count)} NDCs${d.ndc_samples.length ? `, e.g. ${escapeHtml(d.ndc_samples.slice(0, 3).join(", "))}` : ""}` : "couldn't be confirmed in RxNorm"}</li>`).join("")}</ul></div>` : "";
+      ${d.valid ? `${escapeHtml(d.ingredients.join(", "))}${d.rxcui ? ` (RxCUI ${escapeHtml(d.rxcui)})` : ""}. ${fmt.format(d.ndc_count)} NDCs${d.ndcs.length ? `, e.g. ${escapeHtml(d.ndcs.slice(0, 3).join(", "))}` : ""}.${d.names.length ? ` Drug names matched: ${escapeHtml(d.names.slice(0, MAX_NAMES).join(", "))}${d.names.length > MAX_NAMES ? ` and ${d.names.length - MAX_NAMES} more` : ""}.` : ""}` : "couldn't be confirmed in RxNorm"}</li>`).join("")}</ul></div>` : "";
   const backing = c.tool_call_ids.length ? `<p class="small-note muted">Backed by lookups ${c.tool_call_ids.map((id) =>
     `<a href="#tc-${escapeHtml(id)}" class="tc-link">#${logIndex.get(id) || "?"}</a>`).join(", ")}</p>` : "";
   return `
@@ -470,16 +371,201 @@ function criterionCard(c, logIndex) {
         <span class="tag">${escapeHtml(c.section === "inclusion" ? "Inclusion" : "Exclusion")}</span>
         <span class="tag tag-type">${escapeHtml(c.type.replace("_", " "))}</span>
         ${c.approximate ? '<span class="tag tag-approx" title="The window stands in for an event; a reviewer confirms the timing">Approximate timing</span>' : ""}
+        ${c.partial ? '<span class="tag tag-approx" title="Filtered on the drug alone; an expert checks the duration, dose or timing">Expert checks timing</span>' : ""}
       </header>
       <blockquote class="crit-quote">${escapeHtml(c.source_text)}</blockquote>
       ${c.quote_found ? "" : '<p class="crit-warn">This quote wasn\'t found in the trial\'s text.</p>'}
       ${codes}${drugs}
       <p><span class="node-label">Time window</span>${escapeHtml(c.window_text)}</p>
-      ${c.reason_not_codable ? `<p><span class="node-label">Why it needs review</span>${escapeHtml(c.reason_not_codable)}</p>` : ""}
-      ${c.covered_by_step ? `<p><span class="node-label">Covered by</span>${c.covered_by_step === "age_sex" ? "Step 2, age and sex" : "Step 1, diagnoses"}</p>` : ""}
+      ${c.reason_not_codable ? `<p><span class="node-label">${c.partial ? "What the expert checks" : "Why it needs review"}</span>${escapeHtml(c.reason_not_codable)}</p>` : ""}
+      ${c.covered_by_step ? `<p><span class="node-label">Covered by</span>Step 1, age and sex</p>` : ""}
       <p><span class="node-label">Why</span>${escapeHtml(c.rationale)}</p>
       ${c.problems.length ? `<ul class="crit-problems">${c.problems.map((p) => `<li>${escapeHtml(p)}</li>`).join("")}</ul>` : ""}
       ${backing}
       ${c.sql ? `<details><summary>SQL for this rule</summary><pre class="code-block">${escapeHtml(c.sql)}</pre></details>` : ""}
     </article>`;
 }
+
+
+// ---------- step 3: review (both steps as one query) ----------
+
+const REVIEW_GROUPS = [
+  { key: "expert_checks", title: "Expert checks", chip: "group-expert",
+    text: "In the query, but an expert confirms the members these conditions return. Marked EXPERT CHECK in the SQL." },
+  { key: "not_applied", title: "Not in the query", chip: "group-needs_review",
+    text: "Claims can't answer these, so a person checks them. They remove no one. Listed at the end of the SQL." },
+  { key: "flagged", title: "Flagged", chip: "group-flagged",
+    text: "Failed a check, so they were left out of the query. Review them before relying on it." },
+  { key: "covered", title: "Covered by step 1", chip: "",
+    text: "Restate the age or sex limits, which step 1 already applies." },
+  { key: "applied", title: "In the query", chip: "group-codable",
+    text: "Every condition in the SQL, in order. Each one has a comment quoting where it came from." },
+];
+
+async function loadReview() {
+  try {
+    data.review = await getJson(api("review"));
+    renderReview(data.review);
+  } catch (err) {
+    const el = $("#rv-error");
+    el.hidden = false;
+    el.innerHTML = `<h2>The review couldn't be built</h2><p>${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function reviewLabel(i) {
+  if (!i.section) return "Step 1 · ClinicalTrials.gov";
+  const section = i.section[0].toUpperCase() + i.section.slice(1);
+  return `${section} · ${i.requirement === "must_have" ? "Must have" : "Must not have"}`;
+}
+
+function reviewItem(i) {
+  return `
+    <article class="trace rv-item">
+      <header class="trace-input"><b>${escapeHtml(i.id)}</b><span class="tag">${escapeHtml(reviewLabel(i))}</span></header>
+      <p class="rv-quote">${i.section ? `“${escapeHtml(i.source_text)}”` : escapeHtml(i.source_text)}</p>
+      <p class="muted">${escapeHtml(i.note)}</p>
+    </article>`;
+}
+
+function renderReview(r) {
+  $("#rv-error").hidden = true;
+  $("#rv-body").hidden = false;
+  // When step 2 isn't built, its warning comes first and links there
+  $("#rv-warnings").innerHTML = r.warnings.map((w, i) => `<p class="banner" role="status">${escapeHtml(w)}${
+    !r.criteria_built && i === 0 ? ' <a href="#criteria">Go to step 2</a>' : ""}</p>`).join("");
+  const n = (k) => r[k].length;
+  const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  $("#rv-counts").innerHTML = [
+    `<a class="group-chip group-codable" href="#rv-group-applied">${plural(n("applied"), "condition")} in the query</a>`,
+    n("expert_checks") ? `<a class="group-chip group-expert" href="#rv-group-expert_checks">${plural(n("expert_checks"), "expert check")}</a>` : "",
+    n("not_applied") ? `<a class="group-chip group-needs_review" href="#rv-group-not_applied">${n("not_applied")} not in the query</a>` : "",
+    n("flagged") ? `<a class="group-chip group-flagged" href="#rv-group-flagged">${n("flagged")} flagged</a>` : "",
+  ].join("");
+  $("#rv-meta").textContent = r.criteria_built
+    ? `Step 2 built by ${r.model}. Ages and time windows measured from ${niceDate(r.reference_date)}.`
+    : `Ages measured from ${niceDate(r.reference_date)}. Step 2 hasn't been built, so only age and sex are applied.`;
+  $("#rv-sections").innerHTML = REVIEW_GROUPS.filter((g) => n(g.key)).map((g) => `
+    <section class="cr-group" id="rv-group-${g.key}" aria-labelledby="rv-group-${g.key}-title">
+      <div class="trace-head">
+        <h3 id="rv-group-${g.key}-title">${g.title} <span class="count">${n(g.key)}</span></h3>
+        <p class="muted">${g.text}</p>
+      </div>
+      <div class="traces">${r[g.key].map(reviewItem).join("")}</div>
+    </section>`).join("");
+  $("#rv-sql").textContent = r.sql;
+  // The query changed (e.g. step 2 just finished), so earlier results no longer match it
+  for (const id of ["#rv-count-result", "#rv-list-result", "#rv-ran", "#rv-run-error"]) $(id).hidden = true;
+}
+
+// Links inside step 3 jump within the page instead of switching steps
+$("#step-review").addEventListener("click", (e) => {
+  const a = e.target.closest('a[href^="#rv-"]');
+  if (!a) return;
+  e.preventDefault();
+  document.getElementById(a.getAttribute("href").slice(1))?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" });
+});
+
+$("#rv-copy-sql").addEventListener("click", (e) => data.review && copyText(data.review.sql, e.currentTarget));
+$("#rv-download").addEventListener("click", () => {
+  if (!data.review) return;
+  const url = URL.createObjectURL(new Blob([data.review.sql + "\n"], { type: "application/sql" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `${data.review.trial_id}-eligibility.sql` });
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+
+// ---------- step 3: running the query on Databricks ----------
+
+const LIST_LABELS = { member_id: "Member ID", first_nme: "First name", last_nme: "Last name", birth_dte: "Birth date",
+  gender_cde: "Sex", state_or_province_cde: "State", zip_5_postal_cde: "ZIP" };
+let memberList = null;
+
+async function loadWarehouse() {
+  let w;
+  try { w = await getJson("/api/warehouse"); } catch { return; }
+  if (w.configured) {
+    $("#rv-run-note").textContent = `Runs the query above on warehouse ${w.warehouse_id} at ${w.host.replace(/^https?:\/\//, "")}`
+      + `${w.catalog ? ` (catalog ${w.catalog}${w.schema_name ? `, schema ${w.schema_name}` : ""})` : ""}. Each run uses warehouse compute. `
+      + "Results are shown on this page only: Trails-POC doesn't save, cache or log them.";
+    $("#rv-run-ready").hidden = false;
+    return;
+  }
+  $("#rv-run-note").textContent = "Count the matching members, or list them, straight from your Databricks SQL warehouse.";
+  const setup = $("#rv-run-setup");
+  setup.hidden = false;
+  setup.innerHTML = `<p>Not set up yet. Add these to the <code>.env</code> file and restart the app:</p>
+    <pre class="code-block">DATABRICKS_HOST=https://adb-1234567890.12.azuredatabricks.net
+DATABRICKS_TOKEN=dapi...
+DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/abc123   # or DATABRICKS_WAREHOUSE_ID=abc123
+# Optional: DATABRICKS_CATALOG, DATABRICKS_SCHEMA, MEMBERS_TABLE, MX_CLAIMS_TABLE, RX_CLAIMS_TABLE</pre>
+    <p class="muted small-note">Still missing: ${w.missing.map(escapeHtml).join(", ")}. The host and HTTP path are on the warehouse's Connection details tab.</p>`;
+}
+
+async function runOnWarehouse(path, busyText) {
+  const buttons = [$("#rv-count"), $("#rv-list")];
+  buttons.forEach((b) => { b.disabled = true; });
+  $("#rv-run-error").hidden = true;
+  const status = $("#rv-run-status");
+  status.hidden = false;
+  status.innerHTML = `<div class="spinner" role="presentation"></div><p>${escapeHtml(busyText)}</p>`;
+  try {
+    const res = await fetch(api(path), { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `The query didn't run (HTTP ${res.status}).`);
+    $("#rv-ran").hidden = false;
+    $("#rv-ran-sql").textContent = body.statement;
+    return body;
+  } catch (err) {
+    const el = $("#rv-run-error");
+    el.hidden = false;
+    el.innerHTML = `<h2>The query didn't run</h2><p>${escapeHtml(err.message)}</p>`;
+    return null;
+  } finally {
+    status.hidden = true;
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+
+const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`;
+
+$("#rv-count").addEventListener("click", async () => {
+  const r = await runOnWarehouse("review/count", "Counting members on Databricks… A stopped warehouse can take a minute to start.");
+  if (!r) return;
+  const el = $("#rv-count-result");
+  el.hidden = false;
+  const expert = data.review ? data.review.expert_checks.length : 0;
+  el.innerHTML = `<p class="kpi-value">${fmt.format(r.count)}</p>
+    <p class="kpi-label">member${r.count === 1 ? "" : "s"} match the query</p>
+    <p class="kpi-sub">Ran in ${seconds(r.elapsed_ms)}.${r.criteria_built ? "" : " Step 2 isn't built, so this counts age and sex only."}${
+      expert ? ` ${expert} condition${expert === 1 ? " needs" : "s need"} an expert check before these members are confirmed.` : ""}</p>`;
+});
+
+$("#rv-list").addEventListener("click", async () => {
+  const r = await runOnWarehouse("review/members", "Getting the member list from Databricks…");
+  if (!r) return;
+  memberList = r;
+  $("#rv-list-result").hidden = false;
+  $("#rv-list-note").textContent = r.truncated
+    ? `Showing the first ${fmt.format(r.limit)} members by member ID. More match: use Count members for the total, or run the query in Databricks.`
+    : `${fmt.format(r.rows.length)} member${r.rows.length === 1 ? "" : "s"}, ordered by member ID. Ran in ${seconds(r.elapsed_ms)}.`;
+  $("#rv-list-head").innerHTML = `<tr>${r.columns.map((c) => `<th>${escapeHtml(LIST_LABELS[c] || c)}</th>`).join("")}</tr>`;
+  $("#rv-list-body").innerHTML = r.rows.length
+    ? r.rows.map((row) => `<tr>${row.map((v) => `<td>${escapeHtml(v ?? "")}</td>`).join("")}</tr>`).join("")
+    : `<tr class="table-empty"><td colspan="${r.columns.length}">No members match.</td></tr>`;
+});
+
+function csvField(v) {
+  const s = v == null ? "" : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+$("#rv-list-csv").addEventListener("click", () => {
+  if (!memberList) return;
+  const csv = [memberList.columns, ...memberList.rows].map((row) => row.map(csvField).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv + "\r\n"], { type: "text/csv" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `${memberList.trial_id}-members.csv` });
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});

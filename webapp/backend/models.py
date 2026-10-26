@@ -267,75 +267,8 @@ class DemographicFilter(BaseModel):
     age: AgeFilter
     sex: SexFilter
     warnings: list[str]
-    sql: str  # combined WHERE clause against members(member_id, birth_date, sex)
+    sql: str  # combined WHERE clause against the members table (birth_dte, gender_cde)
     definition: dict  # the same filter as structured JSON
-
-
-# ---- eligibility step: diagnoses (ICD) ----
-
-class CuiRef(BaseModel):
-    cui: str
-    name: str | None = None
-
-
-class IcdCode(BaseModel):
-    code: str  # as UMLS gives it, e.g. "O24.91"
-    name: str | None
-    prefix: str  # what it becomes in the filter, e.g. "O24"
-
-
-class CuiTrace(BaseModel):
-    cui: str
-    name: str | None
-    icd_codes: list[IcdCode]
-    why: str
-
-
-class MeshTrace(BaseModel):
-    mesh_id: str
-    term: str
-    by_id: list[CuiRef]  # concepts found by looking up the MeSH ID
-    by_term: list[CuiRef]  # concepts found by looking up the MeSH term
-    match: str  # "id+term" / "id only" / "none"
-    why: str
-    kept: list[CuiTrace]
-    dropped: list[CuiRef]  # found by the ID but not confirmed by the term
-
-
-class ConditionTrace(BaseModel):
-    text: str
-    why: str
-    found: list[CuiTrace]
-
-
-class PrefixRow(BaseModel):
-    prefix: str  # dot-free, e.g. "O24" or "R7303"
-    display: str  # with the dot, e.g. "O24" or "R73.03"
-    category_name: str | None
-    icd_codes: list[str]
-    contributors: list[str]  # e.g. "MeSH D011254 Pregnancy in Diabetics", "Condition text: Gestational Diabetes"
-    full_length: bool  # R/Z codes kept whole instead of cut to 3 characters
-    why: str
-
-
-class Rule(BaseModel):
-    title: str
-    text: str
-
-
-class DiagnosisFilter(BaseModel):
-    trial_id: str
-    title: str | None
-    status: str | None
-    skipped: bool  # no ICD codes found: the step removes no one
-    summary: str
-    mesh: list[MeshTrace]
-    conditions: list[ConditionTrace]
-    prefixes: list[PrefixRow]
-    rules: list[Rule]
-    warnings: list[str]
-    sql: str
-    definition: dict
 
 
 # ---- eligibility step: criteria (built by the pharmacist agent) ----
@@ -383,7 +316,7 @@ class AgentCriterion(BaseModel):
                                                  "each also covers its more specific codes")
     drugs: list[AgentDrug] = Field(default_factory=list)
     window: TimeWindow
-    covered_by_step: Literal["diagnoses", "age_sex"] | None = Field(
+    covered_by_step: Literal["age_sex"] | None = Field(
         default=None, description="Set when an earlier step already handles this rule")
     reason_not_codable: str | None = Field(default=None, description="Why claims can't answer it, when codable is false")
     rationale: str = Field(description="One or two plain sentences: how you read the rule and why you chose these codes, drugs and window")
@@ -402,7 +335,8 @@ class CriterionDrugOut(BaseModel):
     atc_name: str | None
     ingredients: list[str]  # ingredient names covered (one for an ingredient, several for a class)
     ndc_count: int
-    ndc_samples: list[str]
+    ndcs: list[str]  # every NDC, current and historical, of every product containing the ingredients
+    names: list[str]  # ingredient and brand names, matched against the Rx claims' drug name
     valid: bool
 
 
@@ -419,6 +353,7 @@ class CriterionOut(BaseModel):
     window: TimeWindow
     window_text: str
     approximate: bool  # the window stands in for an event, so a reviewer confirms the timing
+    partial: bool = False  # applied on the drug alone (any fill, any time); an expert checks timing, duration or dose
     covered_by_step: str | None
     reason_not_codable: str | None
     rationale: str
@@ -446,6 +381,62 @@ class CriteriaFilter(BaseModel):
     sql: str
     definition: dict
     usage: dict  # input/output tokens across the run
+
+
+# ---- eligibility step: review (steps 1 and 2 combined) ----
+
+class ReviewItem(BaseModel):
+    id: str  # the rule's ID from step 2 ("C3"), or "AGE" / "SEX" for step 1
+    source_text: str  # the criteria text it came from, or the ClinicalTrials.gov field
+    section: str | None  # inclusion / exclusion; None for step 1
+    requirement: str | None  # must_have / must_not_have; None for step 1
+    note: str  # what it does, what the expert checks, or why it isn't in the SQL
+
+
+class ReviewFilter(BaseModel):
+    trial_id: str
+    title: str | None
+    status: str | None
+    reference_date: date
+    criteria_built: bool  # False until step 2 has been run: the SQL then has age and sex only
+    model: str | None  # the model that built step 2
+    applied: list[ReviewItem]  # every condition in the SQL
+    expert_checks: list[ReviewItem]  # in the SQL, but an expert confirms the members it returns
+    not_applied: list[ReviewItem]  # claims can't answer these: a person checks them; they remove no one
+    flagged: list[ReviewItem]  # failed a check (bad quote, unknown code or drug), so left out of the SQL
+    covered: list[ReviewItem]  # criteria that only restate the age or sex limits
+    warnings: list[str]
+    sql: str  # one Databricks SQL query, with a comment on every condition quoting its source
+    query: str  # the same SELECT without the closing ; and the trailing notes: what the count and list wrap
+
+
+class WarehouseStatus(BaseModel):
+    configured: bool
+    host: str | None
+    warehouse_id: str | None
+    catalog: str | None
+    schema_name: str | None
+    missing: list[str]  # the .env settings still needed
+    member_list_limit: int
+
+
+class MemberCount(BaseModel):
+    trial_id: str
+    count: int
+    criteria_built: bool
+    statement: str  # exactly what ran on the warehouse
+    elapsed_ms: int
+
+
+class MemberList(BaseModel):
+    trial_id: str
+    columns: list[str]
+    rows: list[list[str | None]]
+    limit: int
+    truncated: bool  # more members match than the limit
+    criteria_built: bool
+    statement: str
+    elapsed_ms: int
 
 
 # ---------- member data schema (what the filters expect to run against) ----------

@@ -49,7 +49,7 @@ def test_min_and_max_are_inclusive():
     assert f.age.applies and f.age.rule == "18 to 65 years"
     assert f.age.born_on_or_before == date(2008, 10, 15)   # turns 18 on the reference date: in
     assert f.age.born_after == date(1960, 10, 15)          # turns 66 on the reference date: out
-    assert "birth_date <= DATE '2008-10-15'" in f.sql and "birth_date > DATE '1960-10-15'" in f.sql
+    assert "birth_dte <= DATE '2008-10-15'" in f.sql and "birth_dte > DATE '1960-10-15'" in f.sql
     assert any("inclusive" in r for r in f.age.reasons)
 
 
@@ -86,16 +86,16 @@ def test_unreadable_age_warns():
 
 # ---------- sex filter ----------
 
-@pytest.mark.parametrize("sex, allowed, rule, reason", [
-    ("FEMALE", ["FEMALE"], "Female only", "only female members"),
-    ("MALE", ["MALE"], "Male only", "only male members"),
-    ("ALL", [], "Any sex", "any sex"),
-    (None, [], "Any sex", "isn't stated"),
+@pytest.mark.parametrize("sex, allowed, rule, reason, sql", [
+    ("FEMALE", ["FEMALE"], "Female only", "only female members", "gender_cde = 'F'"),
+    ("MALE", ["MALE"], "Male only", "only male members", "gender_cde = 'M'"),
+    ("ALL", [], "Any sex", "any sex", "TRUE"),
+    (None, [], "Any sex", "isn't stated", "TRUE"),
 ])
-def test_sex(sex, allowed, rule, reason):
+def test_sex(sex, allowed, rule, reason, sql):
     f = build_demographic_filter(trial(sex=sex), REF)
     assert f.sex.allowed == allowed and f.sex.rule == rule and f.sex.applies == bool(allowed)
-    assert any(reason in r for r in f.sex.reasons)
+    assert any(reason in r for r in f.sex.reasons) and f.sex.sql.startswith(sql)
 
 
 def test_gender_based_warns_once_with_description():

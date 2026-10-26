@@ -17,7 +17,7 @@ Exclusion Criteria:
 
 CONTEXT = {
     "trial_id": "NCT00000001", "title": "A test trial", "conditions": ["Type 2 Diabetes"],
-    "diagnosis_prefixes": ["E11", "O24"], "age_rule": "18 years and older", "sex_rule": "Any sex",
+    "age_rule": "18 years and older", "sex_rule": "Any sex",
     "study_population": None, "eligibility_text": ELIGIBILITY,
 }
 
@@ -31,7 +31,7 @@ SUBMISSION = {
     "criteria": [
         {"source_text": "Adults 18 years or older", "section": "inclusion", "requirement": "must_have", "type": "age_sex",
          "codable": True, "window": {"type": "not_stated"}, "covered_by_step": "age_sex",
-         "rationale": "Same as the age limit in step 2."},
+         "rationale": "Same as the age limit in step 1."},
         {"source_text": "Pre-existing type 2 diabetes in pregnancy", "section": "inclusion", "requirement": "must_have",
          "type": "diagnosis", "codable": True, "icd10cm_codes": ["O24.11", "O24.999"], "window": {"type": "ever"},
          "rationale": "O24.11 is pre-existing type 2 diabetes in pregnancy."},
@@ -113,3 +113,6 @@ class FakeRx:
 
     async def ndcs_for_ingredient(self, rxcui):
         return {"1545653": ["00597015207", "00597015230"], "1488564": ["00310620530"]}.get(rxcui, [])
+
+    async def brand_names(self, rxcui):
+        return {"1545653": ["Jardiance", "Synjardy"], "1488564": ["Farxiga"]}.get(rxcui, [])

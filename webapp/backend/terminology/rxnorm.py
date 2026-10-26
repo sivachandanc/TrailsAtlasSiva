@@ -14,7 +14,6 @@ RXNAV = "https://rxnav.nlm.nih.gov/REST"
 ATC_ID = re.compile(r"^[A-Z]\d{2}([A-Z]{1,2}(\d{2})?)?$")
 # Product term types whose NDCs make up an ingredient's packages
 PRODUCT_TTYS = "SCD SBD GPCK BPCK"
-MAX_PRODUCTS = 80  # per ingredient; keeps NDC expansion bounded for very common drugs
 
 
 class RxNormError(Exception):
@@ -108,14 +107,37 @@ class RxNormClient:
             out.append({**c, "members": await self.class_members(c["atc"])})
         return out
 
+    async def products_for_ingredient(self, rxcui: str) -> list[str]:
+        """RxCUIs of every product (generic and branded drugs and packs) containing the ingredient."""
+        groups = (await self._json(f"/rxcui/{rxcui}/related.json", {"tty": PRODUCT_TTYS})).get("relatedGroup", {}).get("conceptGroup", [])
+        return list(dict.fromkeys(c["rxcui"] for g in groups for c in g.get("conceptProperties", [])))
+
+    async def historical_ndcs(self, product_rxcui: str) -> list[str]:
+        """Every NDC a product has ever had, including discontinued ones that older claims carry."""
+        data = await self._json(f"/rxcui/{product_rxcui}/allhistoricalndcs.json")
+        times = (data.get("historicalNdcConcept") or {}).get("historicalNdcTime", []) or []
+        ndcs = set()
+        for t in times:
+            for n in t.get("ndcTime", []) or []:
+                ndcs.update(n["ndc"] if isinstance(n.get("ndc"), list) else [n.get("ndc")])
+        return sorted(n for n in ndcs if n)
+
     async def ndcs_for_ingredient(self, rxcui: str) -> list[str]:
-        """Every NDC of every product containing the ingredient (bounded by MAX_PRODUCTS)."""
+        """Every NDC, current and historical, of every product containing the ingredient. Not capped:
+        the list goes into the filter, so a partial list would silently miss members."""
         key = ("ndcs", rxcui)
         if (hit := self._cache.get(key)) is not None:
             return hit
-        groups = (await self._json(f"/rxcui/{rxcui}/related.json", {"tty": PRODUCT_TTYS})).get("relatedGroup", {}).get("conceptGroup", [])
-        products = [c["rxcui"] for g in groups for c in g.get("conceptProperties", [])][:MAX_PRODUCTS]
-        lists = await asyncio.gather(*(self._json(f"/rxcui/{p}/ndcs.json") for p in products))
-        ndcs = sorted({n for d in lists for n in (d.get("ndcGroup", {}).get("ndcList", {}) or {}).get("ndc", []) or []})
+        products = await self.products_for_ingredient(rxcui)
+        current = await asyncio.gather(*(self._json(f"/rxcui/{p}/ndcs.json") for p in products))
+        historical = await asyncio.gather(*(self.historical_ndcs(p) for p in products))
+        ndcs = {n for d in current for n in (d.get("ndcGroup", {}).get("ndcList", {}) or {}).get("ndc", []) or []}
+        ndcs.update(n for lst in historical for n in lst)
+        ndcs = sorted(ndcs)
         self._cache.set(key, ndcs)
         return ndcs
+
+    async def brand_names(self, rxcui: str) -> list[str]:
+        """Brand names of products containing the ingredient, e.g. empagliflozin -> Jardiance, Synjardy."""
+        groups = (await self._json(f"/rxcui/{rxcui}/related.json", {"tty": "BN"})).get("relatedGroup", {}).get("conceptGroup", [])
+        return sorted({c["name"] for g in groups for c in g.get("conceptProperties", [])})

@@ -4,7 +4,7 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const fmt = new Intl.NumberFormat("en-US");
 const NCT_RE = /^NCT\d{8}$/;
-const APP_NAME = "Trial Atlas";
+const APP_NAME = "Trails-POC";
 
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));

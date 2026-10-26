@@ -9,15 +9,16 @@ import anthropic
 from fastapi.responses import StreamingResponse
 from langgraph.errors import GraphRecursionError
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from webapp.backend import config
 from webapp.backend.models import (
-    CriteriaFilter, DemographicFilter, DiagnosisFilter, MemberColumn, MemberSchema, MemberTable,
+    CriteriaFilter, DemographicFilter, MemberColumn, MemberCount, MemberList, MemberSchema, MemberTable, ReviewFilter,
+    WarehouseStatus,
     SearchResult, SourceOption, TrialDashboard,
 )
-from webapp.backend.services.diagnosis_filter import build_diagnosis_filter
 from webapp.backend.services.eligibility_filters import build_demographic_filter
+from webapp.backend.services.review import build_review, count_sql, members_sql
 from webapp.backend.services.cache import TTLCache
 from webapp.backend.services.summary import summarize
 from webapp.backend.services.trial_summary import summarize_trial
@@ -27,12 +28,12 @@ from webapp.backend.agents import member_schema
 from webapp.backend.agents.criteria_graph import RECURSION_LIMIT, build_criteria_graph
 from webapp.backend.agents.llm import LlmNotConfigured
 from webapp.backend.terminology.rxnorm import RxNormClient, RxNormError
+from webapp.backend.warehouse.databricks import DatabricksClient, WarehouseError, WarehouseNotConfigured
 
 router = APIRouter(tags=["search"])
 _cache: TTLCache[SearchResult] = TTLCache(config.CACHE_TTL_SECONDS)
 _trial_cache: TTLCache[TrialDashboard] = TTLCache(config.CACHE_TTL_SECONDS)
 _count_cache: TTLCache[int] = TTLCache(60 * 60)
-_diagnosis_cache: TTLCache[DiagnosisFilter] = TTLCache(config.CACHE_TTL_SECONDS)
 # Agent results cost money to produce, so they're kept for a day (in memory only)
 _criteria_cache: TTLCache[CriteriaFilter] = TTLCache(24 * 60 * 60)
 _criteria_running: set[tuple] = set()
@@ -64,6 +65,13 @@ def get_llm_factory(request: Request) -> Callable:
 
 
 RxNorm = Annotated[RxNormClient, Depends(get_rxnorm)]
+
+
+def get_warehouse(request: Request) -> DatabricksClient:
+    return request.app.state.warehouse
+
+
+Warehouse = Annotated[DatabricksClient, Depends(get_warehouse)]
 LlmFactory = Annotated[Callable, Depends(get_llm_factory)]
 
 
@@ -78,7 +86,9 @@ def get_member_schema() -> MemberSchema:
     tables = [MemberTable(
         name=t["name"], status=t["status"], grain=t["grain"], key=t["key"], used_for=t["used_for"],
         columns=[MemberColumn(name=c, type=typ, description=d, nullable=c in t.get("optional", []))
-                 for c, typ, d in t["columns"]],
+                 for c, typ, d in t["columns"]]
+                + [MemberColumn(name=c, type=typ, description=f"{d} (member list only)", nullable=True)
+                   for c, typ, d in t.get("list_columns", [])],
     ) for t in member_schema.TABLES]
     return MemberSchema(tables=tables, ddl=member_schema.ddl())
 
@@ -146,28 +156,6 @@ async def get_trial(sources: Sources, trial_id: str, source: str = "clinicaltria
     return await load_trial(sources, trial_id, source)
 
 
-@router.get("/trials/{trial_id}/filters/diagnoses", tags=["eligibility filters"])
-async def diagnosis_filter(sources: Sources, umls: Umls, trial_id: str,
-                           source: str = "clinicaltrials_gov") -> DiagnosisFilter:
-    """Step 1 of the filter builder: ICD-10-CM prefixes from the trial's MeSH conditions and
-    condition text, with every lookup along the way."""
-    dashboard = await load_trial(sources, trial_id, source)
-    try:
-        return await diagnoses_for(dashboard, umls, source)
-    except UmlsNotConfigured as exc:
-        raise HTTPException(503, str(exc)) from exc
-    except UmlsError as exc:
-        raise HTTPException(502, f"The ICD lookup didn't complete. {exc}") from exc
-
-
-async def diagnoses_for(dashboard: TrialDashboard, umls: UmlsClient, source: str) -> DiagnosisFilter:
-    key = (source, dashboard.trial.id)
-    if (cached := _diagnosis_cache.get(key)) is None:
-        cached = await build_diagnosis_filter(dashboard.trial, umls)
-        _diagnosis_cache.set(key, cached)
-    return cached
-
-
 @router.get("/trials/{trial_id}/filters/demographics", tags=["eligibility filters"])
 async def demographic_filter(sources: Sources, trial_id: str, source: str = "clinicaltrials_gov",
                              reference_date: date | None = None) -> DemographicFilter:
@@ -195,11 +183,72 @@ async def open_trial_count(sources: Sources, source: str = "clinicaltrials_gov",
 
 @router.get("/trials/{trial_id}/filters/criteria", tags=["eligibility filters"])
 async def criteria_filter(sources: Sources, trial_id: str, source: str = "clinicaltrials_gov") -> CriteriaFilter:
-    """Step 3 result from an earlier run (kept in memory for a day). 404 until it's been built."""
+    """Step 2 result from an earlier run (kept in memory for a day). 404 until it's been built."""
     dashboard = await load_trial(sources, trial_id, source)
     if (cached := _criteria_cache.get((source, dashboard.trial.id))) is None:
-        raise HTTPException(404, "Step 3 hasn't been built for this trial yet.")
+        raise HTTPException(404, "Step 2 hasn't been built for this trial yet.")
     return cached
+
+
+@router.get("/trials/{trial_id}/filters/review", tags=["eligibility filters"])
+async def review_filter(sources: Sources, trial_id: str, source: str = "clinicaltrials_gov") -> ReviewFilter:
+    """Step 3: steps 1 and 2 as one Databricks SQL query, with a comment on every condition quoting
+    where it came from. Before step 2 is built, the query has age and sex only."""
+    return await review_for(sources, trial_id, source)
+
+
+async def review_for(sources: dict[str, TrialSource], trial_id: str, source: str) -> ReviewFilter:
+    dashboard = await load_trial(sources, trial_id, source)
+    criteria = _criteria_cache.get((source, dashboard.trial.id))
+    # Measure ages from the same day step 2 measured its time windows, so the two steps agree
+    reference = criteria.reference_date if criteria else date.today()
+    return build_review(build_demographic_filter(dashboard.trial, reference), criteria)
+
+
+@router.get("/warehouse", tags=["warehouse"])
+def warehouse_status(warehouse: Warehouse) -> WarehouseStatus:
+    """Whether a Databricks SQL warehouse is set up for running the step 3 query. Never returns the token."""
+    return WarehouseStatus(configured=warehouse.configured, host=warehouse.host, warehouse_id=warehouse.warehouse_id,
+                           catalog=warehouse.catalog, schema_name=warehouse.schema, missing=warehouse.missing(),
+                           member_list_limit=config.MEMBER_LIST_LIMIT)
+
+
+async def run_on_warehouse(warehouse: DatabricksClient, statement: str, row_limit: int | None = None) -> dict:
+    try:
+        return await warehouse.query(statement, row_limit=row_limit)
+    except WarehouseNotConfigured as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except WarehouseError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+# The browser only names the trial: the SQL is rebuilt here from the checked rules, so nothing the
+# page sends can reach the warehouse. Member data is never cached; no-store keeps browsers from caching it too.
+@router.post("/trials/{trial_id}/filters/review/count", tags=["warehouse"])
+async def count_members(sources: Sources, warehouse: Warehouse, response: Response, trial_id: str,
+                        source: str = "clinicaltrials_gov") -> MemberCount:
+    """Run the step 3 query on the Databricks warehouse and return how many members it matches."""
+    review = await review_for(sources, trial_id, source)
+    statement = count_sql(review)
+    result = await run_on_warehouse(warehouse, statement)
+    response.headers["Cache-Control"] = "no-store"
+    return MemberCount(trial_id=review.trial_id, count=int(result["rows"][0][0]), criteria_built=review.criteria_built,
+                       statement=statement, elapsed_ms=result["elapsed_ms"])
+
+
+@router.post("/trials/{trial_id}/filters/review/members", tags=["warehouse"])
+async def list_members(sources: Sources, warehouse: Warehouse, response: Response, trial_id: str,
+                       source: str = "clinicaltrials_gov") -> MemberList:
+    """Run the step 3 query and return the matching members (up to MEMBER_LIST_LIMIT), ordered by member_id."""
+    review = await review_for(sources, trial_id, source)
+    limit = config.MEMBER_LIST_LIMIT
+    statement = members_sql(review, limit)
+    result = await run_on_warehouse(warehouse, statement, row_limit=limit + 1)
+    response.headers["Cache-Control"] = "no-store"
+    rows = result["rows"]
+    return MemberList(trial_id=review.trial_id, columns=result["columns"], rows=rows[:limit], limit=limit,
+                      truncated=len(rows) > limit, criteria_built=review.criteria_built, statement=statement,
+                      elapsed_ms=result["elapsed_ms"])
 
 
 def sse(event: dict) -> str:
@@ -248,21 +297,16 @@ async def run_criteria_agent(sources: Sources, umls: Umls, rxnorm: RxNorm, make_
     if not trial.eligibility_criteria:
         raise HTTPException(422, "This trial has no eligibility criteria text to read.")
     if key in _criteria_running:
-        raise HTTPException(409, "Step 3 is already being built for this trial. Wait for it to finish.")
+        raise HTTPException(409, "Step 2 is already being built for this trial. Wait for it to finish.")
     try:
         llm = make_llm()
     except LlmNotConfigured as exc:
         raise HTTPException(503, str(exc)) from exc
 
     demographics = build_demographic_filter(trial, date.today())
-    try:
-        dx = await diagnoses_for(dashboard, umls, source)
-        prefixes = [p.display for p in dx.prefixes]
-    except (UmlsError, UmlsNotConfigured):
-        prefixes = []  # step 1 unavailable; the agent still works without it
     context = {
         "trial_id": trial.id, "title": trial.title, "conditions": trial.conditions,
-        "diagnosis_prefixes": prefixes, "age_rule": demographics.age.rule, "sex_rule": demographics.sex.rule,
+        "age_rule": demographics.age.rule, "sex_rule": demographics.sex.rule,
         "study_population": trial.study_population, "eligibility_text": trial.eligibility_criteria,
         # Background that helps interpret the criteria ("the study drug" etc.); never a source of rules
         "official_title": trial.official_title, "brief_summary": trial.brief_summary,

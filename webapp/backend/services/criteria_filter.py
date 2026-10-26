@@ -1,6 +1,7 @@
 """Turn the agent's submitted rules into checked filters. No LLM here: every code is validated
-against UMLS, every drug is resolved and expanded to NDCs through RxNorm, every quote is checked
-against the trial's text, and the SQL is written by code, not by the model."""
+against UMLS, every drug is resolved through RxNorm and expanded to its NDCs and drug names,
+every quote is checked against the trial's text, and the SQL (Databricks / Spark SQL) is written
+by code, not by the model."""
 
 import asyncio
 import re
@@ -8,13 +9,17 @@ from datetime import date, timedelta
 
 from langchain_core.messages import AIMessage, ToolMessage
 
-from webapp.backend.agents.member_schema import DIAGNOSES, MEMBERS, NDC_LOOKUP, PRESCRIPTIONS
+from webapp.backend.agents.member_schema import MEMBERS, MX_CLAIMS, RX_CLAIMS
 from webapp.backend.models import (
     AgentCriterion, CriteriaFilter, CriterionCode, CriterionDrugOut, CriterionOut, TimeWindow, ToolCallLog,
 )
 from webapp.backend.services.trial_summary import unescape
 
 MAX_RESULT_CHARS = 600
+MIN_NAME_CHARS = 3  # shorter drug names would match unrelated words
+NDCS_PER_LINE = 6
+PARTIAL_WINDOW_TEXT = ("Filtered on any fill of the drug, at any time. An expert checks the timing, duration "
+                       "or dose before the member is confirmed.")
 
 
 def normalize(text: str) -> str:
@@ -82,7 +87,7 @@ def range_text(w: TimeWindow, ref: date, medication: bool) -> str:
     """ "In the last 90 days (on or after 2026-07-16)", "Between 365 and 730 days ago (...)" and so on."""
     lo, hi = w.min_days_ago, w.max_days_ago
     day = lambda n: (ref - timedelta(days=n)).isoformat()
-    what = "Last fill" if medication else "Dated"
+    what = "Filled" if medication else "Dated"
     if lo is not None and hi is not None:
         return f"{what} between {lo} and {hi} days ago ({day(hi)} to {day(lo)})"
     if hi is not None:
@@ -93,9 +98,6 @@ def range_text(w: TimeWindow, ref: date, medication: bool) -> str:
 def window_text(c: AgentCriterion, ref: date) -> str:
     w = c.window
     medication = c.type == "medication"
-    if medication and w.min_days_ago is not None:
-        return ("Needs a start date or how long the drug has been taken. Only each drug's last fill date is "
-                "stored, so this can't be checked.")
     if w.type == "event" and w.bounded:
         return (f"Tied to “{w.event or 'an event'}”, approximated as: {range_text(w, ref, medication).lower()}. "
                 f"{w.approximation or ''} A reviewer confirms the timing.").replace("  ", " ")
@@ -119,50 +121,78 @@ def date_condition(column: str, w: TimeWindow, ref: date) -> str:
 
 
 def diagnosis_sql(c: AgentCriterion, codes: list[str], ref: date) -> str:
-    likes = " OR ".join(f"icd_code LIKE '{code.replace('.', '').upper()}%'" for code in codes)
+    # The claim's code may carry a dot (O24.11) or not (O2411), so both sides are compared dot-free
+    likes = " OR ".join(f"UPPER(REPLACE(primary_diagnosis_cd, '.', '')) LIKE '{code.replace('.', '').upper()}%'"
+                        for code in codes)
     op = "IN" if c.requirement == "must_have" else "NOT IN"
-    # Every diagnosis date is kept, so any window is "a matching code dated inside the range"
-    # ("first diagnosed at least N days ago" = some matching code on or before the cutoff)
-    return (f"member_id {op} (\n  SELECT member_id FROM {DIAGNOSES}\n  WHERE code_system = 'ICD10CM'\n"
-            f"    AND ({likes}){date_condition('diagnosis_date', c.window, ref)}\n)")
+    # Every claim date is kept, so any window is "a matching claim dated inside the range"
+    # ("first diagnosed at least N days ago" = some matching claim on or before the cutoff).
+    # IS NOT NULL: one NULL in a NOT IN list would make the test fail for every member.
+    return (f"member_id {op} (\n  SELECT inferred_member_id FROM {MX_CLAIMS}\n"
+            f"  WHERE inferred_member_id IS NOT NULL\n"
+            f"    AND ({likes}){date_condition('first_serviced_dt', c.window, ref)}\n)")
+
+
+def name_pattern(names: list[str]) -> str:
+    """Whole-word regex over the upper-cased drug name: "insulin glargine" also matches
+    "INSULIN GLARGINE-YFGN", and only letters and digits reach the SQL (nothing to escape)."""
+    alts = []
+    for name in names:
+        words = re.findall(r"[A-Z0-9]+", name.upper())
+        if words and len("".join(words)) >= MIN_NAME_CHARS:
+            alts.append("[^A-Z0-9]+".join(words))
+    return "|".join(dict.fromkeys(alts))
 
 
 def medication_sql(c: AgentCriterion, drugs: list[CriterionDrugOut], ref: date) -> str:
+    ndcs = sorted({n for d in drugs for n in d.ndcs})
+    pattern = name_pattern([n for d in drugs for n in d.names])
     parts = []
-    rxcuis = [d.rxcui for d in drugs if d.rxcui]
-    if rxcuis:
-        parts.append("n.ingredient_rxcui IN (" + ", ".join(f"'{r}'" for r in rxcuis) + ")")
-    parts += [f"n.atc_class LIKE '{d.atc_class}%'" for d in drugs if not d.rxcui and d.atc_class]
+    if ndcs:
+        lines = [", ".join(f"'{n}'" for n in ndcs[i:i + NDCS_PER_LINE]) for i in range(0, len(ndcs), NDCS_PER_LINE)]
+        # product_id is a number, so the NDC's leading zeros are put back before comparing
+        parts.append("LPAD(CAST(product_id AS STRING), 11, '0') IN (\n        " + ",\n        ".join(lines) + ")")
+    if pattern:
+        parts.append(f"UPPER(brand_nme) RLIKE '\\\\b({pattern})\\\\b'")
     op = "IN" if c.requirement == "must_have" else "NOT IN"
-    # One row per member and NDC with the most recent fill, so "in the last N days" checks that fill
-    return (f"member_id {op} (\n  SELECT p.member_id FROM {PRESCRIPTIONS} p\n"
-            f"  JOIN {NDC_LOOKUP} n ON n.ndc = p.ndc\n  WHERE ({' OR '.join(parts)})"
-            f"{date_condition('p.last_fill_date', c.window, ref)}\n)")
+    # Every fill is kept, so "in the last N days" is any matching fill dated inside the range
+    return (f"member_id {op} (\n  SELECT inferred_member_id FROM {RX_CLAIMS}\n"
+            f"  WHERE inferred_member_id IS NOT NULL\n"
+            f"    AND (\n      " + "\n      OR ".join(parts) + "\n    )"
+            f"{date_condition('serviced_dte', c.window, ref)}\n)")
+
+
+async def expand(ingredients: list[dict], rxnorm) -> tuple[list[str], list[str]]:
+    """Every NDC of the ingredients, and the names a claim may carry: ingredient and brand names."""
+    ndc_lists = await asyncio.gather(*(rxnorm.ndcs_for_ingredient(i["rxcui"]) for i in ingredients))
+    brand_lists = await asyncio.gather(*(rxnorm.brand_names(i["rxcui"]) for i in ingredients))
+    ndcs = sorted({n for lst in ndc_lists for n in lst})
+    names = list(dict.fromkeys([i["name"] for i in ingredients] + [b for lst in brand_lists for b in lst]))
+    return ndcs, names
 
 
 async def resolve_drug(d, rxnorm) -> CriterionDrugOut:
-    """An ingredient (rxcui) or a whole ATC class, expanded to every NDC it covers."""
+    """An ingredient (rxcui) or a whole ATC class, expanded to every NDC and drug name it covers."""
+    def invalid():
+        return CriterionDrugOut(name=d.name, rxcui=d.rxcui, atc_class=d.atc_class, atc_name=None,
+                                ingredients=[], ndc_count=0, ndcs=[], names=[], valid=False)
     if d.rxcui:
         props = await rxnorm.properties(d.rxcui)
         if not props:
-            return CriterionDrugOut(name=d.name, rxcui=d.rxcui, atc_class=d.atc_class, atc_name=None,
-                                    ingredients=[], ndc_count=0, ndc_samples=[], valid=False)
+            return invalid()
         ingredients = await rxnorm.ingredients_of(d.rxcui)
-        ndc_lists = await asyncio.gather(*(rxnorm.ndcs_for_ingredient(i["rxcui"]) for i in ingredients))
-        ndcs = sorted({n for lst in ndc_lists for n in lst})
+        ndcs, names = await expand(ingredients, rxnorm)
         return CriterionDrugOut(name=props["name"], rxcui=d.rxcui, atc_class=None, atc_name=None,
                                 ingredients=[i["name"] for i in ingredients], ndc_count=len(ndcs),
-                                ndc_samples=ndcs[:5], valid=bool(ingredients))
+                                ndcs=ndcs, names=names, valid=bool(ingredients))
     classes = await rxnorm.drug_class(d.atc_class) if d.atc_class else []
     exact = next((c for c in classes if c["atc"] == (d.atc_class or "").upper()), None)
     if not exact:
-        return CriterionDrugOut(name=d.name, rxcui=None, atc_class=d.atc_class, atc_name=None,
-                                ingredients=[], ndc_count=0, ndc_samples=[], valid=False)
-    ndc_lists = await asyncio.gather(*(rxnorm.ndcs_for_ingredient(m["rxcui"]) for m in exact["members"]))
-    ndcs = sorted({n for lst in ndc_lists for n in lst})
+        return invalid()
+    ndcs, names = await expand(exact["members"], rxnorm)
     return CriterionDrugOut(name=d.name, rxcui=None, atc_class=exact["atc"], atc_name=exact["name"],
                             ingredients=[m["name"] for m in exact["members"]], ndc_count=len(ndcs),
-                            ndc_samples=ndcs[:5], valid=True)
+                            ndcs=ndcs, names=names, valid=True)
 
 
 async def build_criteria_filter(*, submitted: dict, context: dict, messages: list, umls, rxnorm,
@@ -201,9 +231,19 @@ async def build_criteria_filter(*, submitted: dict, context: dict, messages: lis
         if r.codable and not r.covered_by_step and not (valid_codes or valid_drugs):
             problems.append("Marked as answerable from claims, but it has no confirmed codes or drugs.")
 
+        # A must-have drug rule whose timing, duration or dose claims can't check: the drug part still
+        # narrows the cohort (anyone who never filled the drug can't qualify), so it's applied on the drug
+        # alone, at any time, and an expert checks the rest. Not for must_not_have: removing everyone who
+        # ever filled the drug would also remove members who qualify, and no one would review them.
+        open_event = r.window.type == "event" and not r.window.bounded
+        partial = (r.type == "medication" and r.requirement == "must_have" and bool(valid_drugs)
+                   and not valid_codes and not r.covered_by_step and (not r.codable or open_event))
+
         sql = None
         if valid_codes:
             sql = diagnosis_sql(r, valid_codes, ref)
+        elif partial:
+            sql = medication_sql(r.model_copy(update={"window": TimeWindow(type="ever")}), valid_drugs, ref)
         elif valid_drugs:
             sql = medication_sql(r, valid_drugs, ref)
 
@@ -212,14 +252,14 @@ async def build_criteria_filter(*, submitted: dict, context: dict, messages: lis
             group = "covered"
         elif not ok_quote or (r.codable and not sql) or backwards:
             group = "flagged"
+        elif partial:
+            group = "codable"
+            reason = reason or (f"The time window depends on “{r.window.event}”, which claims can't place reliably.")
         elif not r.codable:
             group = "needs_review"
         elif r.window.type == "event" and not r.window.bounded:
             group, reason = "needs_review", (f"The codes are known, but the time window depends on “{r.window.event}”, "
                                              "which claims can't place reliably.")
-        elif r.type == "medication" and r.window.min_days_ago is not None:
-            group, reason = "needs_review", ("Only each drug's most recent fill date is stored, so how long a member "
-                                             "has taken it, or when they started, can't be checked.")
         else:
             group = "codable"
 
@@ -228,7 +268,8 @@ async def build_criteria_filter(*, submitted: dict, context: dict, messages: lis
         out.append(CriterionOut(
             id=f"C{i}", group=group, source_text=r.source_text, quote_found=ok_quote, section=r.section,
             requirement=r.requirement, type=r.type, codes=cc, drugs=drugs, window=r.window,
-            window_text=window_text(r, ref), approximate=r.window.type == "event" and r.window.bounded,
+            window_text=(PARTIAL_WINDOW_TEXT if partial else window_text(r, ref)),
+            approximate=r.window.type == "event" and r.window.bounded, partial=partial,
             covered_by_step=r.covered_by_step, reason_not_codable=reason,
             rationale=r.rationale, problems=problems, tool_call_ids=backing, sql=sql,
         ))
@@ -241,7 +282,7 @@ async def build_criteria_filter(*, submitted: dict, context: dict, messages: lis
         "trial_id": context["trial_id"],
         "reference_date": ref.isoformat(),
         "model": model,
-        "rules": [{"id": c.id, "group": c.group, "requirement": c.requirement, "type": c.type,
+        "rules": [{"id": c.id, "group": c.group, "partial": c.partial, "requirement": c.requirement, "type": c.type,
                    "icd10cm": [x.code for x in c.codes if x.valid],
                    "drugs": [{"rxcui": d.rxcui, "atc_class": d.atc_class} for d in c.drugs if d.valid],
                    "window": c.window.model_dump()} for c in out],

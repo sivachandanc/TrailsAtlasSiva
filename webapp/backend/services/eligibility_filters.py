@@ -1,7 +1,7 @@
 """Step 1 of the eligibility filter builder: age and sex.
 
 Turns a trial's ClinicalTrials.gov fields (minimumAge, maximumAge, sex, genderBased) into a
-filter on members(member_id, birth_date, sex), with a plain-language reason for every decision.
+filter on the members table (member_id, birth_dte, gender_cde), with a plain-language reason for every decision.
 Pure functions, no I/O.
 """
 
@@ -9,6 +9,7 @@ import calendar
 import re
 from datetime import date, timedelta
 
+from webapp.backend.agents.member_schema import GENDER_CODES, MEMBERS
 from webapp.backend.models import AgeFilter, AgeLimit, DemographicFilter, SexFilter, TrialDetail
 
 AGE_TEXT = re.compile(r"^\s*(\d+)\s*(year|month|week|day)s?\s*$", re.I)  # minutes/hours can't be checked
@@ -96,9 +97,9 @@ def build_age_filter(trial: TrialDetail, ref: date) -> tuple[AgeFilter, list[str
 
     conditions = []
     if born_on_or_before:
-        conditions.append(f"birth_date <= DATE '{born_on_or_before.isoformat()}'  -- at least {lo.raw.lower()} old")
+        conditions.append(f"birth_dte <= DATE '{born_on_or_before.isoformat()}'  -- at least {lo.raw.lower()} old")
     if born_after:
-        conditions.append(f"birth_date > DATE '{born_after.isoformat()}'  -- at most {hi.raw.lower()} old")
+        conditions.append(f"birth_dte > DATE '{born_after.isoformat()}'  -- at most {hi.raw.lower()} old")
     sql = "\n  AND ".join(conditions) if conditions else "TRUE  -- no age limit"
 
     return AgeFilter(minimum=lo, maximum=hi, applies=applies, rule=rule, born_on_or_before=born_on_or_before,
@@ -113,7 +114,7 @@ def build_sex_filter(trial: TrialDetail) -> tuple[SexFilter, list[str]]:
         allowed = [raw]
         rule = f"{SEX_LABELS[raw].capitalize()} only"
         reasons = [f"The sponsor set sex to {raw}, so only {SEX_LABELS[raw]} members are included."]
-        sql = f"sex = '{raw}'"
+        sql = f"gender_cde = '{GENDER_CODES[raw]}'"
     elif raw == "ALL":
         allowed, rule = [], "Any sex"
         reasons = ["The sponsor set sex to ALL, so members of any sex are included."]
@@ -140,8 +141,8 @@ def build_demographic_filter(trial: TrialDetail, reference_date: date) -> Demogr
     age, age_warnings = build_age_filter(trial, reference_date)
     sex, sex_warnings = build_sex_filter(trial)
     parts = [p for p, f in ((age.sql, age), (sex.sql, sex)) if f.applies]
-    sql = ("SELECT member_id\nFROM members\nWHERE " + "\n  AND ".join(parts)) if parts \
-        else "SELECT member_id\nFROM members  -- no age or sex limits: everyone passes this step"
+    sql = (f"SELECT member_id\nFROM {MEMBERS}\nWHERE " + "\n  AND ".join(parts)) if parts \
+        else f"SELECT member_id\nFROM {MEMBERS}  -- no age or sex limits: everyone passes this step"
     definition = {
         "step": "age_sex",
         "trial_id": trial.id,

@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -18,6 +18,7 @@ from webapp.backend.sources import build_sources
 from webapp.backend.agents.llm import make_criteria_llm
 from webapp.backend.terminology.rxnorm import RxNormClient
 from webapp.backend.terminology.umls import UmlsClient
+from webapp.backend.warehouse.databricks import DatabricksClient
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -31,11 +32,24 @@ async def lifespan(app: FastAPI):
         app.state.umls = UmlsClient(client, config.UMLS_API_KEY)
         app.state.rxnorm = RxNormClient(client)
         app.state.criteria_llm_factory = make_criteria_llm
+        app.state.warehouse = DatabricksClient(client, config.DATABRICKS_HOST, config.DATABRICKS_TOKEN,
+                                               config.DATABRICKS_WAREHOUSE_ID, config.DATABRICKS_CATALOG,
+                                               config.DATABRICKS_SCHEMA, config.DATABRICKS_TIMEOUT_SECONDS)
         yield
 
 
-app = FastAPI(title="Trial Atlas", lifespan=lifespan)
+app = FastAPI(title="Trails-POC", lifespan=lifespan)
 app.include_router(router, prefix="/api")
+
+
+@app.middleware("http")
+async def revalidate_frontend(request: Request, call_next):
+    # Without this, browsers may keep running an old script against a newer page after a change;
+    # no-cache makes them check the ETag on every load (a cheap 304 when nothing changed)
+    response = await call_next(request)
+    if not request.url.path.startswith("/api"):
+        response.headers.setdefault("Cache-Control", "no-cache")
+    return response
 
 
 @app.get("/health", include_in_schema=False)

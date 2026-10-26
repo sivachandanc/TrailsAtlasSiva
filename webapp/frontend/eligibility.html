@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Eligibility filters · Trial Atlas</title>
+  <title>Eligibility filters · Trails-POC</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
@@ -26,120 +26,34 @@
 
       <!-- The funnel from the architecture: one dot per filter step. Built steps are links. -->
       <ol class="stepper" aria-label="Filter steps">
-        <li class="step" data-step="diagnoses">
-          <a href="#diagnoses" class="step-link">
-            <span class="step-dot">1</span>
-            <span class="step-name">Diagnoses (ICD)</span>
-            <span class="step-sub"></span>
-          </a>
-        </li>
         <li class="step" data-step="age-sex">
           <a href="#age-sex" class="step-link">
-            <span class="step-dot">2</span>
+            <span class="step-dot">1</span>
             <span class="step-name">Age &amp; sex</span>
             <span class="step-sub"></span>
           </a>
         </li>
         <li class="step" data-step="criteria">
           <a href="#criteria" class="step-link">
-            <span class="step-dot">3</span>
+            <span class="step-dot">2</span>
             <span class="step-name">Eligibility criteria</span>
             <span class="step-sub"></span>
           </a>
         </li>
-        <li class="step upcoming">
-          <span class="step-dot">4</span>
-          <span class="step-name">Review</span>
-          <span class="step-sub">Coming next</span>
+        <li class="step" data-step="review">
+          <a href="#review" class="step-link">
+            <span class="step-dot">3</span>
+            <span class="step-name">Review</span>
+            <span class="step-sub"></span>
+          </a>
         </li>
       </ol>
 
-      <!-- Step 1: diagnoses -->
-      <section class="step-panel" id="step-diagnoses" aria-labelledby="dx-title" hidden>
-        <div class="step-panel-head">
-          <div>
-            <h2 id="dx-title">Step 1: Diagnoses (ICD-10-CM)</h2>
-            <p class="muted">Turns the trial's conditions into ICD-10-CM codes using UMLS, the US National Library of Medicine's terminology service, and shows every lookup along the way.</p>
-          </div>
-        </div>
-
-        <div id="dx-loading" class="status-msg loading" hidden></div>
-        <div id="dx-error" class="status-msg error" hidden></div>
-
-        <div id="dx-body" hidden>
-          <div id="dx-warnings" class="banners"></div>
-
-          <section class="panel result-panel" aria-labelledby="dx-result-title">
-            <h3 id="dx-result-title">Result</h3>
-            <div class="prefix-chips" id="dx-chips"></div>
-            <p id="dx-summary" class="result-summary"></p>
-          </section>
-
-          <section class="trace-section" aria-labelledby="dx-mesh-title">
-            <div class="trace-head">
-              <h3 id="dx-mesh-title">How we got here: MeSH conditions</h3>
-              <p class="muted">NLM tags each trial with standard MeSH condition terms. Each one is looked up in UMLS by its ID and by its name; the concepts both agree on are kept, then mapped to ICD-10-CM.</p>
-            </div>
-            <div id="dx-mesh" class="traces"></div>
-          </section>
-
-          <section class="trace-section" aria-labelledby="dx-text-title">
-            <div class="trace-head">
-              <h3 id="dx-text-title">How we got here: the sponsor's condition text</h3>
-              <p class="muted">The conditions the sponsor typed in, matched against every UMLS vocabulary (ignoring case, plurals and word order), then mapped to ICD-10-CM.</p>
-            </div>
-            <div id="dx-text" class="traces"></div>
-          </section>
-
-          <section class="panel" aria-labelledby="dx-final-title">
-            <div class="panel-head">
-              <h3 id="dx-final-title">Final ICD-10-CM prefixes</h3>
-              <p class="muted">Every code above, cut to its category and merged. A member passes with any one of these.</p>
-            </div>
-            <div class="table-scroll table-auto">
-              <table class="trials">
-                <thead><tr><th>Prefix</th><th class="col-title">ICD-10-CM category</th><th>From codes</th><th>Contributed by</th><th>Why this prefix</th></tr></thead>
-                <tbody id="dx-prefixes"></tbody>
-              </table>
-            </div>
-          </section>
-
-          <details class="panel rules" id="dx-rules-panel">
-            <summary><h3>Rules used to get here</h3></summary>
-            <dl class="rules-list" id="dx-rules"></dl>
-          </details>
-
-          <section class="panel" aria-labelledby="dx-def-title">
-            <div class="panel-head table-head">
-              <div>
-                <h3 id="dx-def-title">Filter definition</h3>
-                <p class="muted">Ready to run against the planned <code>member_diagnoses</code> table (member_id, code_system, icd_code without dots).</p>
-              </div>
-              <button type="button" class="ghost" id="dx-copy-sql">Copy SQL</button>
-            </div>
-            <pre class="code-block" id="dx-sql"></pre>
-            <details class="json-details">
-              <summary>Show as JSON</summary>
-              <pre class="code-block" id="dx-json"></pre>
-            </details>
-          </section>
-        </div>
-
-        <div class="step-next">
-          <div>
-            <p class="step-next-label">Next step</p>
-            <p class="step-next-name">Age &amp; sex</p>
-            <p class="muted">Keeps members whose age and sex fit the trial's limits.</p>
-          </div>
-          <a href="#age-sex" class="primary as-link">Continue to step 2</a>
-        </div>
-      </section>
-
-      <!-- Step 2: age and sex -->
+      <!-- Step 1: age and sex -->
       <section class="step-panel" id="step-age-sex" aria-labelledby="age-step-title" hidden>
         <div class="step-panel-head">
           <div>
-            <h2 id="age-step-title">Step 2: Age and sex</h2>
+            <h2 id="age-step-title">Step 1: Age and sex</h2>
             <p class="muted">Built from the trial's minimum age, maximum age and sex on ClinicalTrials.gov, with ages as of today.</p>
           </div>
         </div>
@@ -174,7 +88,7 @@
             <div class="panel-head table-head">
               <div>
                 <h3 id="def-title">Filter definition</h3>
-                <p class="muted">Ready to run against the planned <code>members</code> table (member_id, birth_date, sex).</p>
+                <p class="muted">Databricks SQL on the <code>members</code> table (member_id, birth_dte, gender_cde).</p>
               </div>
               <button type="button" class="ghost" id="copy-sql">Copy SQL</button>
             </div>
@@ -187,23 +101,22 @@
         </div>
 
         <div class="step-next">
-          <a href="#diagnoses" class="ghost as-link">Back to step 1</a>
           <div class="step-next-right">
             <div>
               <p class="step-next-label">Next step</p>
               <p class="step-next-name">Eligibility criteria</p>
               <p class="muted">An AI pharmacist turns the rest of the eligibility text into checks.</p>
             </div>
-            <a href="#criteria" class="primary as-link">Continue to step 3</a>
+            <a href="#criteria" class="primary as-link">Continue to step 2</a>
           </div>
         </div>
       </section>
 
-      <!-- Step 3: eligibility criteria (AI pharmacist) -->
+      <!-- Step 2: eligibility criteria (AI pharmacist) -->
       <section class="step-panel" id="step-criteria" aria-labelledby="cr-title" hidden>
         <div class="step-panel-head">
           <div>
-            <h2 id="cr-title">Step 3: Eligibility criteria</h2>
+            <h2 id="cr-title">Step 2: Eligibility criteria</h2>
             <p class="muted">An AI pharmacist reads each inclusion and exclusion criterion, looks up real ICD-10-CM codes and drugs, and turns what claims can answer into filters. Everything it looked up is shown below.</p>
           </div>
         </div>
@@ -277,7 +190,7 @@
             <div class="panel-head table-head">
               <div>
                 <h3 id="cr-def-title">Filter definition</h3>
-                <p class="muted">Only the rules marked “Checked from claims” are applied. Runs against <code>members</code>, <code>member_diagnoses</code> (every diagnosis date), <code>member_prescriptions</code> (last fill date per NDC) and the <code>ndc_lookup</code> reference table. <a href="/data-schema">See the expected tables</a>.</p>
+                <p class="muted">Only the rules marked “Checked from claims” are applied. Databricks SQL on <code>members</code>, the medical claims (primary diagnosis per claim) and the pharmacy claims (every fill, matched by NDC or drug name). <a href="/data-schema">See the tables and columns</a>.</p>
               </div>
               <button type="button" class="ghost" id="cr-copy-sql">Copy SQL</button>
             </div>
@@ -290,15 +203,90 @@
         </div>
 
         <div class="step-next">
-          <a href="#age-sex" class="ghost as-link">Back to step 2</a>
+          <a href="#age-sex" class="ghost as-link">Back to step 1</a>
           <div class="step-next-right">
             <div>
               <p class="step-next-label">Next step</p>
               <p class="step-next-name">Review</p>
-              <p class="muted">Brings the three steps together. Not built yet.</p>
+              <p class="muted">Both steps as one Databricks query, with every condition traced to its source.</p>
             </div>
-            <button type="button" class="primary" disabled>Continue to step 4</button>
+            <a href="#review" class="primary as-link">Continue to step 3</a>
           </div>
+        </div>
+      </section>
+
+      <!-- Step 3: review -->
+      <section class="step-panel" id="step-review" aria-labelledby="rv-title" hidden>
+        <div class="step-panel-head">
+          <div>
+            <h2 id="rv-title">Step 3: Review</h2>
+            <p class="muted">Steps 1 and 2 as one Databricks SQL query. A comment above every condition says where it came from: the ClinicalTrials.gov field, or the eligibility criteria text, the reason, the codes or drugs and the time window.</p>
+          </div>
+        </div>
+
+        <div id="rv-error" class="status-msg error" hidden></div>
+
+        <div id="rv-body" hidden>
+          <div id="rv-warnings" class="banners"></div>
+
+          <section class="panel result-panel" aria-labelledby="rv-result-title">
+            <h3 id="rv-result-title">Result</h3>
+            <div class="group-chips" id="rv-counts"></div>
+            <p class="muted small-note" id="rv-meta"></p>
+          </section>
+
+          <div id="rv-sections"></div>
+
+          <section class="panel" aria-labelledby="rv-sql-title">
+            <div class="panel-head table-head">
+              <div>
+                <h3 id="rv-sql-title">The query</h3>
+                <p class="muted">Paste into a Databricks notebook or SQL editor. Runs on <code>members</code>, the medical claims and the pharmacy claims. <a href="/data-schema">See the tables and columns</a>.</p>
+              </div>
+              <div class="rv-actions">
+                <button type="button" class="ghost" id="rv-download">Download .sql</button>
+                <button type="button" class="primary" id="rv-copy-sql">Copy SQL</button>
+              </div>
+            </div>
+            <pre class="code-block rv-sql" id="rv-sql"></pre>
+          </section>
+
+          <section class="panel rv-run" id="rv-run" aria-labelledby="rv-run-title">
+            <div class="panel-head">
+              <h3 id="rv-run-title">Run on Databricks</h3>
+              <p class="muted" id="rv-run-note"></p>
+            </div>
+            <div id="rv-run-setup" hidden></div>
+            <div id="rv-run-ready" hidden>
+              <div class="rv-actions">
+                <button type="button" class="primary" id="rv-count">Count members</button>
+                <button type="button" class="ghost" id="rv-list">Show member list</button>
+              </div>
+              <div id="rv-run-status" class="status-msg loading" hidden></div>
+              <div id="rv-run-error" class="status-msg error" hidden></div>
+              <div id="rv-count-result" class="rv-count" hidden></div>
+              <div id="rv-list-result" hidden>
+                <div class="panel-head table-head">
+                  <p class="muted" id="rv-list-note"></p>
+                  <button type="button" class="ghost" id="rv-list-csv">Download CSV</button>
+                </div>
+                <div class="table-scroll">
+                  <table class="trials">
+                    <thead id="rv-list-head"></thead>
+                    <tbody id="rv-list-body"></tbody>
+                  </table>
+                </div>
+              </div>
+              <details class="json-details" id="rv-ran" hidden>
+                <summary>Show exactly what ran</summary>
+                <pre class="code-block" id="rv-ran-sql"></pre>
+              </details>
+            </div>
+          </section>
+        </div>
+
+        <div class="step-next">
+          <a href="#criteria" class="ghost as-link">Back to step 2</a>
         </div>
       </section>
     </div>
