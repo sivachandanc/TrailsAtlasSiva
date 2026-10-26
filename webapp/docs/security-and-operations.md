@@ -55,6 +55,7 @@ uv run fastapi run webapp/backend/main.py --port 8000   # without reload
 | Step 2: "needs an Anthropic API key" (503) | Set `ANTHROPIC_API_KEY` and restart |
 | Step 2: "Anthropic rejected the API key" | Wrong or revoked key, or a gateway at `ANTHROPIC_BASE_URL` that needs a different one |
 | Step 2: "The API call failed: BadRequestError" with a custom model | The model or gateway doesn't accept the Opus 5.5 options in `agents/llm.py` (thinking display, effort, betas) |
+| Step 2: "The model endpoint didn't accept the request … Trying again in 5 s" | The endpoint refused or dropped the call; it's retried automatically. If retries keep running out, raise `CRITERIA_RETRY_SECONDS` and/or `CRITERIA_RETRIES` |
 | Step 2: "already being built" (409) | A run is in progress for this trial. Wait for it to finish |
 | Step 2: "used too many lookups" | Hit `RECURSION_LIMIT`. Run again; very long criteria may need a higher limit |
 | Step 2: "A code lookup failed … UMLS_API_KEY" | Set the UMLS key |

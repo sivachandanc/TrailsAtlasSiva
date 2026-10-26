@@ -1,5 +1,7 @@
 from datetime import date
 
+import anthropic
+
 import pytest
 from langchain_core.messages import AIMessage
 
@@ -215,3 +217,58 @@ async def test_a_must_have_drug_rule_tied_to_an_open_event_filters_on_the_drug()
                                   reason_not_codable=None, window={"type": "event", "event": "since surgery"})])
     c = r.criteria[0]
     assert c.group == "codable" and c.partial and "since surgery" in c.reason_not_codable
+
+
+# ---------- retrying the model endpoint ----------
+
+from tests.webapp.fakes_agent import api_error  # noqa: E402
+from webapp.backend.agents import criteria_graph  # noqa: E402
+
+
+async def run_with(turns, monkeypatch, retries=3, retry_seconds=5):
+    waits = []
+
+    async def fake_sleep(seconds):
+        waits.append(seconds)
+    monkeypatch.setattr(criteria_graph, "wait", fake_sleep)
+    llm = ScriptedChatModel(turns=turns)
+    graph = build_criteria_graph(llm, FakeIcd(), FakeRx(), model_name="fake", reference_date=REF,
+                                 retries=retries, retry_seconds=retry_seconds)
+    events = []
+    async for mode, chunk in graph.astream({"context": CONTEXT}, {"recursion_limit": 100},
+                                           stream_mode=["updates", "custom"]):
+        if mode == "custom":
+            events.append(chunk)
+        elif "finalize" in chunk:
+            events.append({"type": "done", "result": chunk["finalize"]["result"]})
+    return events, waits, llm
+
+
+async def test_a_refused_request_is_retried_after_the_wait(monkeypatch):
+    events, waits, _ = await run_with([api_error(0), api_error(429)] + scripted_turns(), monkeypatch)
+    assert waits == [5, 5] and events[-1]["type"] == "done" and events[-1]["result"].criteria
+    assert events[0] == {"type": "status", "message": "The model endpoint didn't accept the request "
+                         "(connection failed). Trying again in 5 s (retry 1 of 3)."}
+    assert "(HTTP 429). Trying again in 5 s (retry 2 of 3)" in events[1]["message"]
+
+
+async def test_server_errors_are_retried_but_a_bad_key_is_not(monkeypatch):
+    events, waits, _ = await run_with([api_error(503)] + scripted_turns(), monkeypatch)
+    assert waits == [5] and events[-1]["type"] == "done"
+    with pytest.raises(anthropic.AuthenticationError):
+        await run_with([api_error(401)] + scripted_turns(), monkeypatch)
+    with pytest.raises(anthropic.BadRequestError):
+        await run_with([api_error(400)] + scripted_turns(), monkeypatch)
+
+
+async def test_retries_stop_after_the_limit(monkeypatch):
+    with pytest.raises(anthropic.RateLimitError):
+        await run_with([api_error(429)] * 3 + scripted_turns(), monkeypatch, retries=2)
+
+
+def test_the_sdk_does_not_retry_on_its_own(monkeypatch):
+    from webapp.backend import config
+    from webapp.backend.agents.llm import make_criteria_llm
+    monkeypatch.setattr(config, "ANTHROPIC_API_KEY_SET", True)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    assert make_criteria_llm().max_retries == 0  # the graph's fixed-wait retries replace the SDK's quick ones

@@ -25,7 +25,7 @@ from webapp.backend.services.trial_summary import summarize_trial
 from webapp.backend.sources import NCT_ID, SourceError, TrialNotFound, TrialSource
 from webapp.backend.terminology.umls import UmlsClient, UmlsError, UmlsNotConfigured
 from webapp.backend.agents import member_schema
-from webapp.backend.agents.criteria_graph import RECURSION_LIMIT, build_criteria_graph
+from webapp.backend.agents.criteria_graph import RECURSION_LIMIT, build_criteria_graph, failure_text, retryable
 from webapp.backend.agents.llm import LlmNotConfigured
 from webapp.backend.terminology.rxnorm import RxNormClient, RxNormError
 from webapp.backend.warehouse.databricks import DatabricksClient, WarehouseError, WarehouseNotConfigured
@@ -319,9 +319,13 @@ async def run_criteria_agent(sources: Sources, umls: Umls, rxnorm: RxNorm, make_
         _criteria_running.add(key)
         try:
             yield sse({"type": "status", "message": f"The AI pharmacist is reading {trial.id}'s criteria…"})
-            async for update in graph.astream({"context": context}, {"recursion_limit": RECURSION_LIMIT},
-                                              stream_mode="updates"):
-                for node, payload in update.items():
+            # "custom" carries events nodes send mid-step, e.g. "retrying in 5 s"
+            async for mode, chunk in graph.astream({"context": context}, {"recursion_limit": RECURSION_LIMIT},
+                                                   stream_mode=["updates", "custom"]):
+                if mode == "custom":
+                    yield sse(chunk)
+                    continue
+                for node, payload in chunk.items():
                     for event in agent_events(node, payload or {}):
                         yield sse(event)
                     if (payload or {}).get("error"):
@@ -335,10 +339,15 @@ async def run_criteria_agent(sources: Sources, umls: Umls, rxnorm: RxNorm, make_
             yield sse({"type": "error", "message": "The agent used too many lookups without finishing. Try running it again."})
         except anthropic.AuthenticationError:
             yield sse({"type": "error", "message": "Anthropic rejected the API key. Check ANTHROPIC_API_KEY in .env."})
-        except anthropic.RateLimitError:
-            yield sse({"type": "error", "message": "The Anthropic API is rate limiting requests. Try again in a minute."})
         except (anthropic.APIStatusError, anthropic.APIConnectionError) as exc:
-            yield sse({"type": "error", "message": f"The Anthropic API call failed: {exc.__class__.__name__}."})
+            # Retryable failures were already retried in the graph; say so, so it's clear waiting didn't help
+            tried = (f" after {config.CRITERIA_RETRIES} retr{'y' if config.CRITERIA_RETRIES == 1 else 'ies'} "
+                     f"{config.CRITERIA_RETRY_SECONDS:g} s apart") if retryable(exc) and config.CRITERIA_RETRIES else ""
+            if isinstance(exc, anthropic.RateLimitError):
+                message = f"The model endpoint is rate limiting requests{tried}. Try again in a minute."
+            else:
+                message = f"The model endpoint call failed ({failure_text(exc)}){tried}."
+            yield sse({"type": "error", "message": message})
         except (UmlsError, UmlsNotConfigured, RxNormError) as exc:
             yield sse({"type": "error", "message": f"A code lookup failed: {exc}"})
         finally:

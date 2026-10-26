@@ -63,7 +63,7 @@ def scripted_turns():
 
 
 class ScriptedChatModel(BaseChatModel):
-    """Returns the scripted turns in order; bind_tools is a no-op."""
+    """Returns the scripted turns in order (raising any that are exceptions); bind_tools is a no-op."""
     turns: list
     seen: list = []
 
@@ -79,7 +79,10 @@ class ScriptedChatModel(BaseChatModel):
 
     async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
         self.seen.append(list(messages))
-        return ChatResult(generations=[ChatGeneration(message=self.turns.pop(0))])
+        turn = self.turns.pop(0)
+        if isinstance(turn, Exception):  # a scripted failure, e.g. the endpoint refusing the request
+            raise turn
+        return ChatResult(generations=[ChatGeneration(message=turn)])
 
 
 class FakeIcd:
@@ -116,3 +119,16 @@ class FakeRx:
 
     async def brand_names(self, rxcui):
         return {"1545653": ["Jardiance", "Synjardy"], "1488564": ["Farxiga"]}.get(rxcui, [])
+
+
+def api_error(status: int):
+    """The exception the Anthropic SDK raises for an HTTP status (e.g. 429 -> RateLimitError)."""
+    import anthropic
+    import httpx
+    request = httpx.Request("POST", "https://gateway.example.com/v1/messages")
+    if status == 0:
+        return anthropic.APIConnectionError(request=request)
+    response = httpx.Response(status, request=request)
+    cls = {401: anthropic.AuthenticationError, 429: anthropic.RateLimitError, 503: anthropic.InternalServerError,
+           400: anthropic.BadRequestError}.get(status, anthropic.APIStatusError)
+    return cls(f"HTTP {status}", response=response, body=None)

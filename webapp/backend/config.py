@@ -35,6 +35,11 @@ CRITERIA_MODEL = os.environ.get("CRITERIA_MODEL") or "claude-opus-5-5"
 CRITERIA_EFFORT = "high"
 ANTHROPIC_API_KEY_SET = bool(os.environ.get("ANTHROPIC_API_KEY"))
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL") or None
+# When a model call fails in a way waiting can fix (connection dropped or refused, timeout, 408, 409,
+# 425, 429, 5xx), wait this long and try again, up to this many times. Some company endpoints and
+# gateways refuse requests that arrive too soon after the last one.
+CRITERIA_RETRIES = int(os.environ.get("CRITERIA_RETRIES") or 3)
+CRITERIA_RETRY_SECONDS = float(os.environ.get("CRITERIA_RETRY_SECONDS") or 5)
 
 # The member tables the filter SQL runs against (Databricks / Spark SQL). Override the names in .env.
 MEMBERS_TABLE = os.environ.get("MEMBERS_TABLE") or "members"
