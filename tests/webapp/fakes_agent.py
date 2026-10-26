@@ -113,3 +113,6 @@ class FakeRx:
 
     async def ndcs_for_ingredient(self, rxcui):
         return {"1545653": ["00597015207", "00597015230"], "1488564": ["00310620530"]}.get(rxcui, [])
+
+    async def brand_names(self, rxcui):
+        return {"1545653": ["Jardiance", "Synjardy"], "1488564": ["Farxiga"]}.get(rxcui, [])

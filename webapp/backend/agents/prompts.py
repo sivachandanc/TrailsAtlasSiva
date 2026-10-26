@@ -66,7 +66,7 @@ afterwards.
 Describe the window; don't compute dates. A window says how long ago the code or fill must be \
 dated, counted back from today:
 - days_ago with max_days_ago: in the last N days ("in the past 3 months" = max 90, "within 1 year" = \
-max 365). For a medication, the most recent fill is in that window.
+max 365). For a medication, a fill is dated in that window.
 - days_ago with min_days_ago: at least N days ago ("diagnosed at least 6 months ago" = min 180).
 - days_ago with both: between the two ("12 to 24 months ago" = min 365, max 730).
 - ever: "history of", "ever", "prior". not_stated: the text gives no window.
@@ -77,8 +77,8 @@ the timing of every approximated rule. When none fits, leave the limits empty.
 Standard approximations (the same for every trial; don't invent others):
 {approximations_text()}
 
-Medications store only the last fill, so a medication rule can use max_days_ago but not \
-min_days_ago: a rule about how long someone has taken a drug, or when they started it, is \
+Every fill is kept with its date, so a medication window works like a diagnosis window. Days of \
+supply aren't stored: a rule about how long someone has taken a drug, or when they started it, is \
 codable false.
 
 ## Rules the data can't answer
@@ -86,6 +86,10 @@ Keep them, with codable false and a short reason_not_codable: lab values (HbA1c,
 signs, scores, imaging, procedures you can't express as a diagnosis or drug, drug duration, dose \
 or new starts, consent, language, location or site, investigator judgment, willingness. Never turn \
 them into a guessed code.
+
+A medication rule that's codable false still names its drugs (look them up as usual): for a \
+must_have rule, the filter keeps members who filled the drug at any time and an expert checks the \
+duration, dose or timing.
 
 ## What the earlier step already covers
 Step 1 (age and sex) is listed in the request. Mark a rule covered_by_step "age_sex" when it \

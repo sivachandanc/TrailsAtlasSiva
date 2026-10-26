@@ -18,6 +18,7 @@ from webapp.backend.sources import build_sources
 from webapp.backend.agents.llm import make_criteria_llm
 from webapp.backend.terminology.rxnorm import RxNormClient
 from webapp.backend.terminology.umls import UmlsClient
+from webapp.backend.warehouse.databricks import DatabricksClient
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
@@ -31,6 +32,9 @@ async def lifespan(app: FastAPI):
         app.state.umls = UmlsClient(client, config.UMLS_API_KEY)
         app.state.rxnorm = RxNormClient(client)
         app.state.criteria_llm_factory = make_criteria_llm
+        app.state.warehouse = DatabricksClient(client, config.DATABRICKS_HOST, config.DATABRICKS_TOKEN,
+                                               config.DATABRICKS_WAREHOUSE_ID, config.DATABRICKS_CATALOG,
+                                               config.DATABRICKS_SCHEMA, config.DATABRICKS_TIMEOUT_SECONDS)
         yield
 
 

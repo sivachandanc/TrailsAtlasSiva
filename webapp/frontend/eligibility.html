@@ -40,10 +40,12 @@
             <span class="step-sub"></span>
           </a>
         </li>
-        <li class="step upcoming">
-          <span class="step-dot">3</span>
-          <span class="step-name">Review</span>
-          <span class="step-sub">Coming next</span>
+        <li class="step" data-step="review">
+          <a href="#review" class="step-link">
+            <span class="step-dot">3</span>
+            <span class="step-name">Review</span>
+            <span class="step-sub"></span>
+          </a>
         </li>
       </ol>
 
@@ -86,7 +88,7 @@
             <div class="panel-head table-head">
               <div>
                 <h3 id="def-title">Filter definition</h3>
-                <p class="muted">Ready to run against the planned <code>members</code> table (member_id, birth_date, sex).</p>
+                <p class="muted">Databricks SQL on the <code>members</code> table (member_id, birth_dte, gender_cde).</p>
               </div>
               <button type="button" class="ghost" id="copy-sql">Copy SQL</button>
             </div>
@@ -188,7 +190,7 @@
             <div class="panel-head table-head">
               <div>
                 <h3 id="cr-def-title">Filter definition</h3>
-                <p class="muted">Only the rules marked “Checked from claims” are applied. Runs against <code>members</code>, <code>member_diagnoses</code> (every diagnosis date), <code>member_prescriptions</code> (last fill date per NDC) and the <code>ndc_lookup</code> reference table. <a href="/data-schema">See the expected tables</a>.</p>
+                <p class="muted">Only the rules marked “Checked from claims” are applied. Databricks SQL on <code>members</code>, the medical claims (primary diagnosis per claim) and the pharmacy claims (every fill, matched by NDC or drug name). <a href="/data-schema">See the tables and columns</a>.</p>
               </div>
               <button type="button" class="ghost" id="cr-copy-sql">Copy SQL</button>
             </div>
@@ -206,10 +208,85 @@
             <div>
               <p class="step-next-label">Next step</p>
               <p class="step-next-name">Review</p>
-              <p class="muted">Brings the two steps together. Not built yet.</p>
+              <p class="muted">Both steps as one Databricks query, with every condition traced to its source.</p>
             </div>
-            <button type="button" class="primary" disabled>Continue to step 3</button>
+            <a href="#review" class="primary as-link">Continue to step 3</a>
           </div>
+        </div>
+      </section>
+
+      <!-- Step 3: review -->
+      <section class="step-panel" id="step-review" aria-labelledby="rv-title" hidden>
+        <div class="step-panel-head">
+          <div>
+            <h2 id="rv-title">Step 3: Review</h2>
+            <p class="muted">Steps 1 and 2 as one Databricks SQL query. A comment above every condition says where it came from: the ClinicalTrials.gov field, or the eligibility criteria text, the reason, the codes or drugs and the time window.</p>
+          </div>
+        </div>
+
+        <div id="rv-error" class="status-msg error" hidden></div>
+
+        <div id="rv-body" hidden>
+          <div id="rv-warnings" class="banners"></div>
+
+          <section class="panel result-panel" aria-labelledby="rv-result-title">
+            <h3 id="rv-result-title">Result</h3>
+            <div class="group-chips" id="rv-counts"></div>
+            <p class="muted small-note" id="rv-meta"></p>
+          </section>
+
+          <div id="rv-sections"></div>
+
+          <section class="panel" aria-labelledby="rv-sql-title">
+            <div class="panel-head table-head">
+              <div>
+                <h3 id="rv-sql-title">The query</h3>
+                <p class="muted">Paste into a Databricks notebook or SQL editor. Runs on <code>members</code>, the medical claims and the pharmacy claims. <a href="/data-schema">See the tables and columns</a>.</p>
+              </div>
+              <div class="rv-actions">
+                <button type="button" class="ghost" id="rv-download">Download .sql</button>
+                <button type="button" class="primary" id="rv-copy-sql">Copy SQL</button>
+              </div>
+            </div>
+            <pre class="code-block rv-sql" id="rv-sql"></pre>
+          </section>
+
+          <section class="panel rv-run" id="rv-run" aria-labelledby="rv-run-title">
+            <div class="panel-head">
+              <h3 id="rv-run-title">Run on Databricks</h3>
+              <p class="muted" id="rv-run-note"></p>
+            </div>
+            <div id="rv-run-setup" hidden></div>
+            <div id="rv-run-ready" hidden>
+              <div class="rv-actions">
+                <button type="button" class="primary" id="rv-count">Count members</button>
+                <button type="button" class="ghost" id="rv-list">Show member list</button>
+              </div>
+              <div id="rv-run-status" class="status-msg loading" hidden></div>
+              <div id="rv-run-error" class="status-msg error" hidden></div>
+              <div id="rv-count-result" class="rv-count" hidden></div>
+              <div id="rv-list-result" hidden>
+                <div class="panel-head table-head">
+                  <p class="muted" id="rv-list-note"></p>
+                  <button type="button" class="ghost" id="rv-list-csv">Download CSV</button>
+                </div>
+                <div class="table-scroll">
+                  <table class="trials">
+                    <thead id="rv-list-head"></thead>
+                    <tbody id="rv-list-body"></tbody>
+                  </table>
+                </div>
+              </div>
+              <details class="json-details" id="rv-ran" hidden>
+                <summary>Show exactly what ran</summary>
+                <pre class="code-block" id="rv-ran-sql"></pre>
+              </details>
+            </div>
+          </section>
+        </div>
+
+        <div class="step-next">
+          <a href="#criteria" class="ghost as-link">Back to step 2</a>
         </div>
       </section>
     </div>

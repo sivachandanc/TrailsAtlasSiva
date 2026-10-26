@@ -411,6 +411,17 @@ table.trials { border-collapse: separate; border-spacing: 0; width: 100%; font-s
 .group-codable { background: var(--go-soft); color: var(--go); border-color: transparent; }
 .group-needs_review { background: var(--soon-soft); color: var(--soon); border-color: transparent; }
 .group-flagged { background: var(--err-soft); color: var(--err); border-color: transparent; }
+.group-expert { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+
+/* Step 3: review */
+.rv-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.rv-sql { max-height: 70vh; white-space: pre; }
+.rv-item .rv-quote { font-weight: 600; max-width: 95ch; }
+.rv-run { display: grid; gap: 12px; border-top: 4px solid var(--accent); }
+.rv-run .status-msg { padding: 16px 0; }
+#rv-run-ready:not([hidden]) { display: grid; gap: 16px; }  /* :not([hidden]) so hiding still works */
+.rv-count { display: grid; gap: 2px; }
+.rv-count .kpi-value { font-size: 2.4rem; color: var(--accent); }
 .cr-group { display: grid; gap: 10px; margin-top: 4px; }
 .criterion p { max-width: 95ch; }
 .criterion .node-label { display: block; }

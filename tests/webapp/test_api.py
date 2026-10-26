@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from webapp.backend import config
 from webapp.backend.api import routes
 from webapp.backend.main import app
 from webapp.backend.models import Site, Trial, TrialDetail
@@ -8,7 +9,9 @@ from webapp.backend.sources.base import SourceError, TrialNotFound
 import json
 
 from tests.webapp.fakes_agent import ELIGIBILITY, FakeIcd, FakeRx, ScriptedChatModel, scripted_turns
+from webapp.backend.agents import member_schema
 from webapp.backend.agents.llm import LlmNotConfigured
+from webapp.backend.warehouse.databricks import WarehouseNotConfigured
 
 
 class FakeSource:
@@ -46,10 +49,33 @@ class FakeSource:
         return 25266
 
 
+class FakeWarehouse:
+    """Answers the count and the member list like Databricks would (every value a string)."""
+    host, warehouse_id, catalog, schema = "https://adb-1.azuredatabricks.net", "wh1", None, None
+
+    def __init__(self, configured=True):
+        self.configured = configured
+        self.statements = []
+
+    def missing(self):
+        return [] if self.configured else ["DATABRICKS_HOST"]
+
+    async def query(self, statement, row_limit=None):
+        if not self.configured:
+            raise WarehouseNotConfigured("Running the query needs a Databricks SQL warehouse.")
+        self.statements.append(statement)
+        if statement.startswith("SELECT COUNT(*)"):
+            return {"columns": ["member_count"], "rows": [["2"]], "truncated": False, "statement_id": "s1", "elapsed_ms": 5}
+        rows = [["1", "Ann", "Lee", "1980-01-01", "F", "OH", "43004"], ["2", "Bea", "Kim", "1990-02-02", "F", "OH", "43017"]]
+        return {"columns": member_schema.MEMBER_LIST_COLUMNS, "rows": rows[:row_limit], "truncated": False,
+                "statement_id": "s2", "elapsed_ms": 6}
+
+
 @pytest.fixture
 def client_with():
-    def make(source, umls=None, llm_factory=None):
+    def make(source, umls=None, llm_factory=None, warehouse=None):
         umls = umls or FakeIcd()
+        app.dependency_overrides[routes.get_warehouse] = lambda: warehouse or FakeWarehouse()
         app.dependency_overrides[routes.get_rxnorm] = lambda: FakeRx()
         app.dependency_overrides[routes.get_llm_factory] = lambda: (
             llm_factory or (lambda: ScriptedChatModel(turns=scripted_turns())))
@@ -200,11 +226,59 @@ def test_criteria_agent_reports_model_errors(client_with):
     assert events[-1] == {"type": "error", "message": "The model declined to review these criteria."}
 
 
+def test_review_combines_both_steps_once_step_2_is_built(client_with):
+    c = client_with(FakeSource())
+    before = c.get("/api/trials/NCT05909046/filters/review").json()
+    assert not before["criteria_built"] and "gender_cde = 'F'" in before["sql"] and "rx_claims" not in before["sql"]
+    c.post("/api/trials/NCT05909046/filters/criteria/run")
+    after = c.get("/api/trials/nct05909046/filters/review").json()
+    assert after["criteria_built"] and after["model"] == config.CRITERIA_MODEL
+    assert "-- Criteria: \"Use of an SGLT2 inhibitor in the past 3 months\"" in after["sql"] and "rx_claims" in after["sql"]
+    assert c.get("/api/trials/NCT09999999/filters/review").status_code == 404
+
+
 def test_member_schema_matches_what_the_sql_uses(client_with):
     body = client_with(FakeSource()).get("/api/member-schema").json()
     by_name = {t["name"]: t for t in body["tables"]}
-    assert {n for n, t in by_name.items() if t["status"] == "required"} == \
-        {"members", "member_diagnoses", "member_prescriptions"}
-    assert [c["name"] for c in by_name["member_prescriptions"]["columns"]] == ["member_id", "ndc", "last_fill_date"]
-    assert by_name["member_pharmacy_fills"]["status"] == "preferred"
-    assert "CREATE TABLE member_diagnoses" in body["ddl"]
+    assert set(by_name) == {"members", "mx_claims", "rx_claims"} and all(t["status"] == "required" for t in body["tables"])
+    assert [c["name"] for c in by_name["rx_claims"]["columns"]] == ["inferred_member_id", "serviced_dte", "product_id", "brand_nme"]
+    assert [c["name"] for c in by_name["members"]["columns"]] == [
+        "member_id", "birth_dte", "gender_cde", "first_nme", "last_nme", "state_or_province_cde", "zip_5_postal_cde"]
+    assert by_name["members"]["columns"][3]["description"] == "first name (member list only)"
+    assert "CREATE TABLE mx_claims" in body["ddl"] and "PRIMARY KEY (member_id)" in body["ddl"]
+
+
+def test_warehouse_status_never_includes_the_token(client_with):
+    body = client_with(FakeSource()).get("/api/warehouse").json()
+    assert body["configured"] and body["warehouse_id"] == "wh1" and "token" not in json.dumps(body).lower()
+
+
+def test_count_and_list_run_the_review_query_rebuilt_on_the_server(client_with):
+    wh = FakeWarehouse()
+    c = client_with(FakeSource(), warehouse=wh)
+    review = c.get("/api/trials/NCT05909046/filters/review").json()
+
+    r = c.post("/api/trials/NCT05909046/filters/review/count")
+    assert r.status_code == 200 and r.json()["count"] == 2 and r.headers["cache-control"] == "no-store"
+    assert wh.statements[0] == f"SELECT COUNT(*) AS member_count FROM (\n{review['query']}\n) AS eligible"
+
+    r = c.post("/api/trials/NCT05909046/filters/review/members")
+    body = r.json()
+    assert r.headers["cache-control"] == "no-store" and body["rows"][0][:3] == ["1", "Ann", "Lee"] and not body["truncated"]
+    assert body["columns"] == member_schema.MEMBER_LIST_COLUMNS and body["limit"] == config.MEMBER_LIST_LIMIT
+    assert f"WHERE m.member_id IN (\n{review['query']}\n)" in wh.statements[1]
+    assert wh.statements[1].endswith(f"LIMIT {config.MEMBER_LIST_LIMIT + 1}")
+
+
+def test_a_list_longer_than_the_limit_is_marked_truncated(client_with, monkeypatch):
+    monkeypatch.setattr(config, "MEMBER_LIST_LIMIT", 1)
+    body = client_with(FakeSource()).post("/api/trials/NCT05909046/filters/review/members").json()
+    assert body["truncated"] and len(body["rows"]) == 1
+
+
+def test_running_without_a_warehouse_says_what_to_set(client_with):
+    c = client_with(FakeSource(), warehouse=FakeWarehouse(configured=False))
+    assert c.get("/api/warehouse").json()["missing"] == ["DATABRICKS_HOST"]
+    r = c.post("/api/trials/NCT05909046/filters/review/count")
+    assert r.status_code == 503 and "Databricks SQL warehouse" in r.json()["detail"]
+    assert c.post("/api/trials/NCT09999999/filters/review/count").status_code == 404

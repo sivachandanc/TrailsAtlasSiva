@@ -1,16 +1,16 @@
 "use strict";
 // Eligibility filter builder (/trials/NCT.../eligibility).
-// Step 1: age and sex, step 2: eligibility criteria (AI pharmacist). One step is shown at a time; the URL hash picks it.
+// Step 1: age and sex, step 2: eligibility criteria (AI pharmacist), step 3: review (both as one query). One step is shown at a time; the URL hash picks it.
 
 const parts = location.pathname.split("/");
 const trialId = decodeURIComponent(parts[2] || "");
-const STEPS = ["age-sex", "criteria"];
+const STEPS = ["age-sex", "criteria", "review"];
 const api = (path) => `/api/trials/${encodeURIComponent(trialId)}/filters/${path}`;
 
 mountNav({ active: "lookup", withSearch: true, search: { mode: "nct", value: trialId } });
 $("#back").href = `/trials/${encodeURIComponent(trialId)}`;
 
-const data = { demographics: null, criteria: null };
+const data = { demographics: null, criteria: null, review: null };
 
 async function getJson(url) {
   const res = await fetch(url);
@@ -43,6 +43,8 @@ function showStep() {
 window.addEventListener("hashchange", showStep);
 
 // ---------- load ----------
+
+loadWarehouse();
 
 (async function load() {
   // The age/sex step is quick and tells us whether the trial exists, so it gates the page
@@ -115,11 +117,12 @@ $("#copy-sql").addEventListener("click", (e) => data.demographics && copyText(da
 // ---------- step 2: eligibility criteria (AI pharmacist) ----------
 
 const GROUPS = {
-  codable: { title: "Checked from claims", text: "Turned into filters. Members must meet every one of these. Rules marked “Approximate timing” use a standard window for an event, so a reviewer confirms the timing." },
+  codable: { title: "Checked from claims", text: "Turned into filters. Members must meet every one of these. Rules marked “Approximate timing” use a standard window for an event, so a reviewer confirms the timing. Rules marked “Expert checks timing” filter on the drug alone, and an expert checks the duration, dose or timing." },
   needs_review: { title: "Needs review", text: "Claims can't answer these, so a person checks them. They don't filter anyone out." },
   covered: { title: "Covered by step 1", text: "Already handled by the age and sex step." },
   flagged: { title: "Flagged", text: "Failed a check, so they were left out of the filter. Review them before relying on this step." },
 };
+const MAX_NAMES = 8;  // drug names listed on a rule before "and N more"
 const TOOL_LABELS = {
   search_icd10cm: (a) => `Searched ICD-10-CM for “${a.text}”`,
   icd10cm_code: (a) => `Checked ICD-10-CM code ${a.code}`,
@@ -223,6 +226,7 @@ async function loadCriteria() {
     if (res.ok) { renderCriteria(await res.json()); return; }
   } catch { /* fall through to the intro */ }
   $("#cr-intro").hidden = false;
+  loadReview();  // step 2 not built: the review shows age and sex only
 }
 
 $("#cr-run").addEventListener("click", runCriteria);
@@ -315,6 +319,7 @@ function showCriteriaError(message) {
 function renderCriteria(r) {
   data.criteria = r;
   renderCriteriaText(r);
+  loadReview();  // the review query now includes step 2's rules
   $("#cr-live").hidden = true;
   $("#cr-intro").hidden = true;
   $("#cr-error").hidden = true;
@@ -355,7 +360,7 @@ function criterionCard(c, logIndex) {
     c.codes.map((x) => `<li class="${x.valid ? "" : "invalid"}"><b>${escapeHtml(x.code)}</b> ${escapeHtml(x.name || "not a real code")}</li>`).join("")}</ul></div>` : "";
   const drugs = c.drugs.length ? `<div><span class="node-label">Drugs</span><ul class="code-list">${c.drugs.map((d) => `
     <li class="${d.valid ? "" : "invalid"}"><b>${escapeHtml(d.atc_class ? `${d.atc_class} ${d.atc_name || d.name}` : d.name)}</b>
-      ${d.valid ? `${escapeHtml(d.ingredients.join(", "))}${d.rxcui ? ` (RxCUI ${escapeHtml(d.rxcui)})` : ""}. ${fmt.format(d.ndc_count)} NDCs${d.ndc_samples.length ? `, e.g. ${escapeHtml(d.ndc_samples.slice(0, 3).join(", "))}` : ""}` : "couldn't be confirmed in RxNorm"}</li>`).join("")}</ul></div>` : "";
+      ${d.valid ? `${escapeHtml(d.ingredients.join(", "))}${d.rxcui ? ` (RxCUI ${escapeHtml(d.rxcui)})` : ""}. ${fmt.format(d.ndc_count)} NDCs${d.ndcs.length ? `, e.g. ${escapeHtml(d.ndcs.slice(0, 3).join(", "))}` : ""}.${d.names.length ? ` Drug names matched: ${escapeHtml(d.names.slice(0, MAX_NAMES).join(", "))}${d.names.length > MAX_NAMES ? ` and ${d.names.length - MAX_NAMES} more` : ""}.` : ""}` : "couldn't be confirmed in RxNorm"}</li>`).join("")}</ul></div>` : "";
   const backing = c.tool_call_ids.length ? `<p class="small-note muted">Backed by lookups ${c.tool_call_ids.map((id) =>
     `<a href="#tc-${escapeHtml(id)}" class="tc-link">#${logIndex.get(id) || "?"}</a>`).join(", ")}</p>` : "";
   return `
@@ -366,12 +371,13 @@ function criterionCard(c, logIndex) {
         <span class="tag">${escapeHtml(c.section === "inclusion" ? "Inclusion" : "Exclusion")}</span>
         <span class="tag tag-type">${escapeHtml(c.type.replace("_", " "))}</span>
         ${c.approximate ? '<span class="tag tag-approx" title="The window stands in for an event; a reviewer confirms the timing">Approximate timing</span>' : ""}
+        ${c.partial ? '<span class="tag tag-approx" title="Filtered on the drug alone; an expert checks the duration, dose or timing">Expert checks timing</span>' : ""}
       </header>
       <blockquote class="crit-quote">${escapeHtml(c.source_text)}</blockquote>
       ${c.quote_found ? "" : '<p class="crit-warn">This quote wasn\'t found in the trial\'s text.</p>'}
       ${codes}${drugs}
       <p><span class="node-label">Time window</span>${escapeHtml(c.window_text)}</p>
-      ${c.reason_not_codable ? `<p><span class="node-label">Why it needs review</span>${escapeHtml(c.reason_not_codable)}</p>` : ""}
+      ${c.reason_not_codable ? `<p><span class="node-label">${c.partial ? "What the expert checks" : "Why it needs review"}</span>${escapeHtml(c.reason_not_codable)}</p>` : ""}
       ${c.covered_by_step ? `<p><span class="node-label">Covered by</span>Step 1, age and sex</p>` : ""}
       <p><span class="node-label">Why</span>${escapeHtml(c.rationale)}</p>
       ${c.problems.length ? `<ul class="crit-problems">${c.problems.map((p) => `<li>${escapeHtml(p)}</li>`).join("")}</ul>` : ""}
@@ -379,3 +385,187 @@ function criterionCard(c, logIndex) {
       ${c.sql ? `<details><summary>SQL for this rule</summary><pre class="code-block">${escapeHtml(c.sql)}</pre></details>` : ""}
     </article>`;
 }
+
+
+// ---------- step 3: review (both steps as one query) ----------
+
+const REVIEW_GROUPS = [
+  { key: "expert_checks", title: "Expert checks", chip: "group-expert",
+    text: "In the query, but an expert confirms the members these conditions return. Marked EXPERT CHECK in the SQL." },
+  { key: "not_applied", title: "Not in the query", chip: "group-needs_review",
+    text: "Claims can't answer these, so a person checks them. They remove no one. Listed at the end of the SQL." },
+  { key: "flagged", title: "Flagged", chip: "group-flagged",
+    text: "Failed a check, so they were left out of the query. Review them before relying on it." },
+  { key: "covered", title: "Covered by step 1", chip: "",
+    text: "Restate the age or sex limits, which step 1 already applies." },
+  { key: "applied", title: "In the query", chip: "group-codable",
+    text: "Every condition in the SQL, in order. Each one has a comment quoting where it came from." },
+];
+
+async function loadReview() {
+  try {
+    data.review = await getJson(api("review"));
+    renderReview(data.review);
+  } catch (err) {
+    const el = $("#rv-error");
+    el.hidden = false;
+    el.innerHTML = `<h2>The review couldn't be built</h2><p>${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function reviewLabel(i) {
+  if (!i.section) return "Step 1 · ClinicalTrials.gov";
+  const section = i.section[0].toUpperCase() + i.section.slice(1);
+  return `${section} · ${i.requirement === "must_have" ? "Must have" : "Must not have"}`;
+}
+
+function reviewItem(i) {
+  return `
+    <article class="trace rv-item">
+      <header class="trace-input"><b>${escapeHtml(i.id)}</b><span class="tag">${escapeHtml(reviewLabel(i))}</span></header>
+      <p class="rv-quote">${i.section ? `“${escapeHtml(i.source_text)}”` : escapeHtml(i.source_text)}</p>
+      <p class="muted">${escapeHtml(i.note)}</p>
+    </article>`;
+}
+
+function renderReview(r) {
+  $("#rv-error").hidden = true;
+  $("#rv-body").hidden = false;
+  // When step 2 isn't built, its warning comes first and links there
+  $("#rv-warnings").innerHTML = r.warnings.map((w, i) => `<p class="banner" role="status">${escapeHtml(w)}${
+    !r.criteria_built && i === 0 ? ' <a href="#criteria">Go to step 2</a>' : ""}</p>`).join("");
+  const n = (k) => r[k].length;
+  const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+  $("#rv-counts").innerHTML = [
+    `<a class="group-chip group-codable" href="#rv-group-applied">${plural(n("applied"), "condition")} in the query</a>`,
+    n("expert_checks") ? `<a class="group-chip group-expert" href="#rv-group-expert_checks">${plural(n("expert_checks"), "expert check")}</a>` : "",
+    n("not_applied") ? `<a class="group-chip group-needs_review" href="#rv-group-not_applied">${n("not_applied")} not in the query</a>` : "",
+    n("flagged") ? `<a class="group-chip group-flagged" href="#rv-group-flagged">${n("flagged")} flagged</a>` : "",
+  ].join("");
+  $("#rv-meta").textContent = r.criteria_built
+    ? `Step 2 built by ${r.model}. Ages and time windows measured from ${niceDate(r.reference_date)}.`
+    : `Ages measured from ${niceDate(r.reference_date)}. Step 2 hasn't been built, so only age and sex are applied.`;
+  $("#rv-sections").innerHTML = REVIEW_GROUPS.filter((g) => n(g.key)).map((g) => `
+    <section class="cr-group" id="rv-group-${g.key}" aria-labelledby="rv-group-${g.key}-title">
+      <div class="trace-head">
+        <h3 id="rv-group-${g.key}-title">${g.title} <span class="count">${n(g.key)}</span></h3>
+        <p class="muted">${g.text}</p>
+      </div>
+      <div class="traces">${r[g.key].map(reviewItem).join("")}</div>
+    </section>`).join("");
+  $("#rv-sql").textContent = r.sql;
+  // The query changed (e.g. step 2 just finished), so earlier results no longer match it
+  for (const id of ["#rv-count-result", "#rv-list-result", "#rv-ran", "#rv-run-error"]) $(id).hidden = true;
+}
+
+// Links inside step 3 jump within the page instead of switching steps
+$("#step-review").addEventListener("click", (e) => {
+  const a = e.target.closest('a[href^="#rv-"]');
+  if (!a) return;
+  e.preventDefault();
+  document.getElementById(a.getAttribute("href").slice(1))?.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth" });
+});
+
+$("#rv-copy-sql").addEventListener("click", (e) => data.review && copyText(data.review.sql, e.currentTarget));
+$("#rv-download").addEventListener("click", () => {
+  if (!data.review) return;
+  const url = URL.createObjectURL(new Blob([data.review.sql + "\n"], { type: "application/sql" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `${data.review.trial_id}-eligibility.sql` });
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});
+
+
+// ---------- step 3: running the query on Databricks ----------
+
+const LIST_LABELS = { member_id: "Member ID", first_nme: "First name", last_nme: "Last name", birth_dte: "Birth date",
+  gender_cde: "Sex", state_or_province_cde: "State", zip_5_postal_cde: "ZIP" };
+let memberList = null;
+
+async function loadWarehouse() {
+  let w;
+  try { w = await getJson("/api/warehouse"); } catch { return; }
+  if (w.configured) {
+    $("#rv-run-note").textContent = `Runs the query above on warehouse ${w.warehouse_id} at ${w.host.replace(/^https?:\/\//, "")}`
+      + `${w.catalog ? ` (catalog ${w.catalog}${w.schema_name ? `, schema ${w.schema_name}` : ""})` : ""}. Each run uses warehouse compute. `
+      + "Results are shown on this page only: Trial Atlas doesn't save, cache or log them.";
+    $("#rv-run-ready").hidden = false;
+    return;
+  }
+  $("#rv-run-note").textContent = "Count the matching members, or list them, straight from your Databricks SQL warehouse.";
+  const setup = $("#rv-run-setup");
+  setup.hidden = false;
+  setup.innerHTML = `<p>Not set up yet. Add these to the <code>.env</code> file and restart the app:</p>
+    <pre class="code-block">DATABRICKS_HOST=https://adb-1234567890.12.azuredatabricks.net
+DATABRICKS_TOKEN=dapi...
+DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/abc123   # or DATABRICKS_WAREHOUSE_ID=abc123
+# Optional: DATABRICKS_CATALOG, DATABRICKS_SCHEMA, MEMBERS_TABLE, MX_CLAIMS_TABLE, RX_CLAIMS_TABLE</pre>
+    <p class="muted small-note">Still missing: ${w.missing.map(escapeHtml).join(", ")}. The host and HTTP path are on the warehouse's Connection details tab.</p>`;
+}
+
+async function runOnWarehouse(path, busyText) {
+  const buttons = [$("#rv-count"), $("#rv-list")];
+  buttons.forEach((b) => { b.disabled = true; });
+  $("#rv-run-error").hidden = true;
+  const status = $("#rv-run-status");
+  status.hidden = false;
+  status.innerHTML = `<div class="spinner" role="presentation"></div><p>${escapeHtml(busyText)}</p>`;
+  try {
+    const res = await fetch(api(path), { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `The query didn't run (HTTP ${res.status}).`);
+    $("#rv-ran").hidden = false;
+    $("#rv-ran-sql").textContent = body.statement;
+    return body;
+  } catch (err) {
+    const el = $("#rv-run-error");
+    el.hidden = false;
+    el.innerHTML = `<h2>The query didn't run</h2><p>${escapeHtml(err.message)}</p>`;
+    return null;
+  } finally {
+    status.hidden = true;
+    buttons.forEach((b) => { b.disabled = false; });
+  }
+}
+
+const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`;
+
+$("#rv-count").addEventListener("click", async () => {
+  const r = await runOnWarehouse("review/count", "Counting members on Databricks… A stopped warehouse can take a minute to start.");
+  if (!r) return;
+  const el = $("#rv-count-result");
+  el.hidden = false;
+  const expert = data.review ? data.review.expert_checks.length : 0;
+  el.innerHTML = `<p class="kpi-value">${fmt.format(r.count)}</p>
+    <p class="kpi-label">member${r.count === 1 ? "" : "s"} match the query</p>
+    <p class="kpi-sub">Ran in ${seconds(r.elapsed_ms)}.${r.criteria_built ? "" : " Step 2 isn't built, so this counts age and sex only."}${
+      expert ? ` ${expert} condition${expert === 1 ? " needs" : "s need"} an expert check before these members are confirmed.` : ""}</p>`;
+});
+
+$("#rv-list").addEventListener("click", async () => {
+  const r = await runOnWarehouse("review/members", "Getting the member list from Databricks…");
+  if (!r) return;
+  memberList = r;
+  $("#rv-list-result").hidden = false;
+  $("#rv-list-note").textContent = r.truncated
+    ? `Showing the first ${fmt.format(r.limit)} members by member ID. More match: use Count members for the total, or run the query in Databricks.`
+    : `${fmt.format(r.rows.length)} member${r.rows.length === 1 ? "" : "s"}, ordered by member ID. Ran in ${seconds(r.elapsed_ms)}.`;
+  $("#rv-list-head").innerHTML = `<tr>${r.columns.map((c) => `<th>${escapeHtml(LIST_LABELS[c] || c)}</th>`).join("")}</tr>`;
+  $("#rv-list-body").innerHTML = r.rows.length
+    ? r.rows.map((row) => `<tr>${row.map((v) => `<td>${escapeHtml(v ?? "")}</td>`).join("")}</tr>`).join("")
+    : `<tr class="table-empty"><td colspan="${r.columns.length}">No members match.</td></tr>`;
+});
+
+function csvField(v) {
+  const s = v == null ? "" : String(v);
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+$("#rv-list-csv").addEventListener("click", () => {
+  if (!memberList) return;
+  const csv = [memberList.columns, ...memberList.rows].map((row) => row.map(csvField).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([csv + "\r\n"], { type: "text/csv" }));
+  const a = Object.assign(document.createElement("a"), { href: url, download: `${memberList.trial_id}-members.csv` });
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+});

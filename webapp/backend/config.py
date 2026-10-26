@@ -35,3 +35,21 @@ CRITERIA_MODEL = os.environ.get("CRITERIA_MODEL") or "claude-opus-5-5"
 CRITERIA_EFFORT = "high"
 ANTHROPIC_API_KEY_SET = bool(os.environ.get("ANTHROPIC_API_KEY"))
 ANTHROPIC_BASE_URL = os.environ.get("ANTHROPIC_BASE_URL") or None
+
+# The member tables the filter SQL runs against (Databricks / Spark SQL). Override the names in .env.
+MEMBERS_TABLE = os.environ.get("MEMBERS_TABLE") or "members"
+MX_CLAIMS_TABLE = os.environ.get("MX_CLAIMS_TABLE") or "mx_claims"
+RX_CLAIMS_TABLE = os.environ.get("RX_CLAIMS_TABLE") or "rx_claims"
+
+# Optional: a Databricks SQL warehouse to run the step 3 query on (member count and list).
+# All three of host, token and warehouse are needed; the warehouse can be given as its ID or as
+# the HTTP path from the warehouse's connection details (/sql/1.0/warehouses/<id>). Results are
+# sent to the browser only; nothing is stored, cached or logged.
+DATABRICKS_HOST = os.environ.get("DATABRICKS_HOST") or None  # e.g. https://adb-123.azuredatabricks.net
+DATABRICKS_TOKEN = os.environ.get("DATABRICKS_TOKEN") or None
+DATABRICKS_WAREHOUSE_ID = (os.environ.get("DATABRICKS_WAREHOUSE_ID")
+                           or (os.environ.get("DATABRICKS_HTTP_PATH") or "").rstrip("/").rsplit("/", 1)[-1] or None)
+DATABRICKS_CATALOG = os.environ.get("DATABRICKS_CATALOG") or None  # default catalog for unqualified table names
+DATABRICKS_SCHEMA = os.environ.get("DATABRICKS_SCHEMA") or None
+DATABRICKS_TIMEOUT_SECONDS = 120  # longer than this and the statement is cancelled
+MEMBER_LIST_LIMIT = int(os.environ.get("MEMBER_LIST_LIMIT") or 1000)

@@ -27,7 +27,8 @@ async def test_full_run_groups_validates_and_builds_sql():
     dx = by_text["Pre-existing type 2 diabetes in pregnancy"]
     assert dx.group == "codable" and [(c.code, c.valid) for c in dx.codes] == [("O24.11", True), ("O24.999", False)]
     assert "O24.999 isn't a real ICD-10-CM code" in dx.problems[0]
-    assert "icd_code LIKE 'O2411%'" in dx.sql and "O24999" not in dx.sql and "member_id IN" in dx.sql
+    assert "UPPER(REPLACE(primary_diagnosis_cd, '.', '')) LIKE 'O2411%'" in dx.sql and "O24999" not in dx.sql
+    assert "member_id IN" in dx.sql and "inferred_member_id IS NOT NULL" in dx.sql
     assert dx.tool_call_ids == ["t1", "t3"]  # the search that returned O24.11 and the check that confirmed it
 
     lab = by_text["HbA1c between 7% and 10%"]
@@ -35,8 +36,13 @@ async def test_full_run_groups_validates_and_builds_sql():
 
     med = by_text["Use of an SGLT2 inhibitor in the past 3 months"]
     assert med.group == "codable" and med.drugs[0].ndc_count == 3 and med.drugs[0].ingredients == ["empagliflozin", "dapagliflozin"]
-    assert "member_id NOT IN" in med.sql and "n.atc_class LIKE 'A10BK%'" in med.sql
-    assert "p.last_fill_date >= DATE '2026-07-16'" in med.sql  # last fill within 90 days of the reference date
+    assert med.drugs[0].ndcs == ["00310620530", "00597015207", "00597015230"]
+    assert med.drugs[0].names == ["empagliflozin", "dapagliflozin", "Jardiance", "Synjardy", "Farxiga"]
+    assert "member_id NOT IN" in med.sql and "inferred_member_id IS NOT NULL" in med.sql
+    # Matched by NDC (leading zeros restored on the numeric product_id) or by whole-word drug name
+    assert "LPAD(CAST(product_id AS STRING), 11, '0') IN (\n        '00310620530', '00597015207', '00597015230')" in med.sql
+    assert "UPPER(brand_nme) RLIKE '\\\\b(EMPAGLIFLOZIN|DAPAGLIFLOZIN|JARDIANCE|SYNJARDY|FARXIGA)\\\\b'" in med.sql
+    assert "serviced_dte >= DATE '2026-07-16'" in med.sql  # a fill within 90 days of the reference date
 
     fake = by_text["Takes made-up drug daily"]
     assert fake.group == "flagged" and not fake.quote_found and any("couldn't be confirmed" in p for p in fake.problems)
@@ -86,7 +92,7 @@ def test_quote_matching():
 
 # ---------- member schema, windows and the prompt ----------
 
-from webapp.backend.agents.member_schema import DIAGNOSES, PRESCRIPTIONS  # noqa: E402
+from webapp.backend.agents.member_schema import MX_CLAIMS, RX_CLAIMS  # noqa: E402
 from webapp.backend.agents.prompts import SYSTEM_PROMPT, user_message  # noqa: E402
 from webapp.backend.services.criteria_filter import build_criteria_filter  # noqa: E402
 
@@ -108,14 +114,14 @@ async def test_at_least_n_days_ago_is_a_code_on_or_before_the_cutoff():
     r = await finalize([rule("Type 2 diabetes diagnosed at least 6 months ago",
                              {"type": "days_ago", "min_days_ago": 180})])
     c = r.criteria[0]
-    assert c.group == "codable" and "AND diagnosis_date <= DATE '2026-04-17'" in c.sql
-    assert f"FROM {DIAGNOSES}" in c.sql and c.window_text.startswith("Dated at least 180 days ago")
+    assert c.group == "codable" and "AND first_serviced_dt <= DATE '2026-04-17'" in c.sql
+    assert f"FROM {MX_CLAIMS}" in c.sql and c.window_text.startswith("Dated at least 180 days ago")
 
 
 async def test_a_range_window_bounds_both_ends():
     r = await finalize([rule("Type 2 diabetes", {"type": "days_ago", "min_days_ago": 365, "max_days_ago": 730})])
     c = r.criteria[0]
-    assert "diagnosis_date >= DATE '2024-10-14'" in c.sql and "diagnosis_date <= DATE '2025-10-14'" in c.sql
+    assert "first_serviced_dt >= DATE '2024-10-14'" in c.sql and "first_serviced_dt <= DATE '2025-10-14'" in c.sql
     assert c.window_text == "Dated between 365 and 730 days ago (2024-10-14 to 2025-10-14)" and not c.approximate
 
 
@@ -123,7 +129,7 @@ async def test_an_approximated_event_is_applied_and_flagged_for_review():
     r = await finalize([rule("Type 2 diabetes", {"type": "event", "event": "this pregnancy", "max_days_ago": 365,
                                                  "approximation": "This pregnancy = last 365 days."})])
     c = r.criteria[0]
-    assert c.group == "codable" and c.approximate and "diagnosis_date >= DATE '2025-10-14'" in r.sql
+    assert c.group == "codable" and c.approximate and "first_serviced_dt >= DATE '2025-10-14'" in r.sql
     assert "this pregnancy" in c.window_text and "reviewer confirms" in c.window_text
 
 
@@ -137,19 +143,20 @@ async def test_a_backwards_window_is_flagged():
     assert r.criteria[0].group == "flagged" and "backwards" in r.criteria[0].problems[0]
 
 
-async def test_drug_duration_needs_review_because_only_the_last_fill_is_stored():
+async def test_a_medication_window_can_reach_back_because_every_fill_is_kept():
     r = await finalize([{"source_text": "On metformin for at least 3 months", "section": "inclusion",
                          "requirement": "must_have", "type": "medication", "codable": True,
                          "drugs": [{"name": "empagliflozin", "rxcui": "1545653"}],
                          "window": {"type": "days_ago", "min_days_ago": 90}, "rationale": "x"}])
     c = r.criteria[0]
-    assert c.group == "needs_review" and "most recent fill" in c.reason_not_codable
-    assert "WHERE" not in r.sql  # not applied to the step's filter
+    assert c.group == "codable" and f"FROM {RX_CLAIMS}" in c.sql and "AND serviced_dte <= DATE '2026-07-16'" in c.sql
+    assert c.window_text.startswith("Filled at least 90 days ago")
 
 
 def test_prompt_describes_the_member_tables_and_background():
-    assert f"{PRESCRIPTIONS}: one row per member and NDC, holding only the most recent fill" in SYSTEM_PROMPT
-    assert "last_fill_date" in SYSTEM_PROMPT and "min_days_ago" in SYSTEM_PROMPT
+    assert f"{RX_CLAIMS}: one row per pharmacy claim (every fill kept)" in SYSTEM_PROMPT
+    assert "brand_nme" in SYSTEM_PROMPT and "primary_diagnosis_cd" in SYSTEM_PROMPT and "min_days_ago" in SYSTEM_PROMPT
+    assert "only the last fill" not in SYSTEM_PROMPT and "Secondary diagnoses" in SYSTEM_PROMPT
     assert "This pregnancy" in SYSTEM_PROMPT and "max_days_ago 365" in SYSTEM_PROMPT
     msg = user_message({**CONTEXT, "official_title": "A Polypill Strategy", "brief_summary": "Six months of therapy.",
                         "interventions": [{"type": "DRUG", "name": "Polypill", "other_names": ["Finerenone, Empagliflozin"],
@@ -167,9 +174,44 @@ def test_member_schema_ddl_runs_and_the_prompt_leaves_out_unused_tables():
     from webapp.backend.agents import member_schema
     duckdb.connect().execute(member_schema.ddl())
     text = member_schema.prompt_text()
-    assert "member_prescriptions" in text and "member_pharmacy_fills" not in text
+    assert "rx_claims" in text and "mx_claims" in text and "ndc_lookup" not in text
 
 
 def test_prompt_asks_for_progress_updates_the_page_can_show():
     # Claude Opus 5.5 rarely narrates between tool calls unless asked; without this the notes panel is empty
     assert "## Progress updates" in SYSTEM_PROMPT and "Before each round of lookups" in SYSTEM_PROMPT
+
+
+def test_drug_names_become_a_whole_word_pattern_with_only_letters_and_digits():
+    from webapp.backend.services.criteria_filter import name_pattern
+    # Multi-word names match any separator; short names are dropped; quotes never reach the SQL
+    assert name_pattern(["insulin glargine", "Jardiance", "O'Neil", "XY", "jardiance"]) == \
+        "INSULIN[^A-Z0-9]+GLARGINE|JARDIANCE|O[^A-Z0-9]+NEIL"
+
+
+def drug_rule(text, requirement, **kw):
+    return {"source_text": text, "section": "inclusion", "requirement": requirement, "type": "medication",
+            "codable": False, "drugs": [{"name": "empagliflozin", "rxcui": "1545653"}],
+            "window": {"type": "days_ago", "min_days_ago": 90}, "reason_not_codable": "Duration isn't in claims.",
+            "rationale": "x", **kw}
+
+
+async def test_a_must_have_drug_duration_rule_filters_on_the_drug_and_flags_the_timing():
+    r = await finalize([drug_rule("On metformin for at least 3 months", "must_have")])
+    c = r.criteria[0]
+    assert c.group == "codable" and c.partial and c.reason_not_codable == "Duration isn't in claims."
+    assert "member_id IN" in c.sql and "serviced_dte" not in c.sql  # any fill, at any time
+    assert c.sql in r.sql and "An expert checks" in c.window_text and r.definition["rules"][0]["partial"]
+
+
+async def test_a_must_not_have_drug_duration_rule_stays_with_the_reviewer():
+    r = await finalize([drug_rule("On metformin for at least 3 months", "must_not_have")])
+    c = r.criteria[0]
+    assert c.group == "needs_review" and not c.partial and "WHERE" not in r.sql  # removes no one
+
+
+async def test_a_must_have_drug_rule_tied_to_an_open_event_filters_on_the_drug():
+    r = await finalize([drug_rule("On metformin for at least 3 months", "must_have", codable=True,
+                                  reason_not_codable=None, window={"type": "event", "event": "since surgery"})])
+    c = r.criteria[0]
+    assert c.group == "codable" and c.partial and "since surgery" in c.reason_not_codable
