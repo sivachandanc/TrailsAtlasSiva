@@ -26,6 +26,8 @@ def make_criteria_llm() -> ChatAnthropic:
         # If a safety classifier declines, the API retries on a fallback model instead of failing.
         betas=["thinking-display-updates-2026-08-18", "server-side-fallback-2026-07-01"],
         model_kwargs={"fallbacks": "default"},
-        max_retries=3,
+        # Retries are done by the graph (criteria_graph.py) with a fixed wait between attempts; the
+        # SDK's own retries wait under a second at first, which some endpoints refuse
+        max_retries=0,
         **endpoint,
     )

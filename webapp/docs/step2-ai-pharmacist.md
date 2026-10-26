@@ -41,8 +41,8 @@ routes.run_criteria_agent ─ context ─► criteria_graph
 |---|---|
 | `GraphRecursionError` | the agent used too many lookups |
 | `anthropic.AuthenticationError` | the key was rejected |
-| `anthropic.RateLimitError` | rate limited |
-| `anthropic.APIStatusError` / `APIConnectionError` | the API call failed |
+| `anthropic.RateLimitError` | the endpoint is rate limiting (after the retries, if they ran) |
+| `anthropic.APIStatusError` / `APIConnectionError` | the endpoint call failed, with the HTTP status or "connection failed" (after the retries, if they ran) |
 | UMLS / RxNorm errors | a code lookup failed |
 
 ## 2. The model (`agents/llm.py`)
@@ -58,7 +58,7 @@ routes.run_criteria_agent ─ context ─► criteria_graph
 | `output_config.effort` | `high` | |
 | betas | `thinking-display-updates-2026-08-18`, `server-side-fallback-2026-07-01` | |
 | `model_kwargs.fallbacks` | `default` | if a safety classifier declines, the API retries on a fallback model |
-| `max_retries` | 3 | |
+| `max_retries` | 0 | the graph retries instead, with a fixed wait (below) |
 | `base_url` | `ANTHROPIC_BASE_URL`, only if set | |
 
 ## 3. The prompt (`agents/prompts.py`)
@@ -185,6 +185,32 @@ exactly what the model saw.
 `ToolMessage` (same `tool_call_id`). It counts only if that tool run didn't fail.
 
 `RECURSION_LIMIT = 100` graph steps. Each lookup round is 2 steps, so about 45 rounds.
+
+### Retrying the model endpoint
+`call_model()` inside `pharmacist` retries a failed model call **after a fixed wait**. Some company
+endpoints and gateways refuse requests that arrive too soon after the last one, and the SDK's own
+retries wait less than a second at first.
+
+| Setting | Default |
+|---|---|
+| `CRITERIA_RETRIES` | 3 retries (4 attempts in all) |
+| `CRITERIA_RETRY_SECONDS` | 5 seconds before each retry |
+
+- **Retried** (`retryable()`):
+  - connection refused or dropped, and timeouts (`APIConnectionError`, `APITimeoutError`)
+  - HTTP 408, 409, 425 and 429
+  - any 5xx, including Anthropic's 529 "overloaded"
+- **Not retried:** a bad key (401), forbidden (403), a bad request (400) and other 4xx. Waiting
+  won't fix them, so they fail at once.
+- **Shown live:** each retry is sent to the page as it happens, using LangGraph's
+  `get_stream_writer()` (a custom stream event), e.g. "The model endpoint didn't accept the
+  request (HTTP 503). Trying again in 5 s (retry 1 of 3)." The route streams with
+  `stream_mode=["updates", "custom"]` to receive them.
+- **When retries run out,** the error says so: "… after 3 retries 5 s apart."
+- **Safe to repeat:** a retry resends the same conversation. Nothing is added to the graph state
+  until a call succeeds.
+- langchain-anthropic raises its own subclasses (`AnthropicAPIError`, `AnthropicConnectionError`).
+  They're subclasses of the standard Anthropic errors, so the checks above still apply.
 
 ## 6. Checks and SQL (`services/criteria_filter.py`, `build_criteria_filter`)
 

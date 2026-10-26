@@ -9,20 +9,28 @@ The model only reads trial text and tool results (never member data). Everything
 submits (code checks, NDC expansion, SQL) is deterministic code in services/criteria_filter.py.
 """
 
+import asyncio
 from datetime import date
 from typing import Annotated, Any, TypedDict
 
+import anthropic
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langgraph.config import get_stream_writer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
+from webapp.backend import config
 from webapp.backend.agents.prompts import SYSTEM_PROMPT, user_message
 from webapp.backend.agents.tools import SUBMIT, build_tools
 from webapp.backend.services.criteria_filter import build_criteria_filter
 
 # Each model turn plus its tool turn is two graph steps; this allows ~45 rounds of lookups
 RECURSION_LIMIT = 100
+# HTTP statuses where waiting and trying again can help: timeout, conflict, too early, rate limited,
+# and server or gateway errors (5xx, including Anthropic's 529 "overloaded")
+RETRY_STATUSES = {408, 409, 425, 429}
+wait = asyncio.sleep  # the pause between retries; tests replace it
 
 
 class CriteriaState(TypedDict, total=False):
@@ -46,7 +54,31 @@ def submitted_call(messages: list) -> dict | None:
     return call["args"] if result is not None and getattr(result, "status", "success") != "error" else None
 
 
-def build_criteria_graph(llm, umls, rxnorm, *, model_name: str, reference_date: date | None = None):
+def retryable(exc: Exception) -> bool:
+    """True for failures a later attempt can get past; False for e.g. a bad key or a bad request."""
+    if isinstance(exc, anthropic.APIConnectionError):  # refused, dropped or timed out (APITimeoutError)
+        return True
+    if isinstance(exc, anthropic.APIStatusError):
+        return exc.status_code in RETRY_STATUSES or exc.status_code >= 500
+    return False
+
+
+def failure_text(exc: Exception) -> str:
+    """Plain words for a failure. langchain-anthropic raises its own subclasses (AnthropicAPIError,
+    AnthropicConnectionError), so this goes by type, not by class name."""
+    if status := getattr(exc, "status_code", None):
+        return f"HTTP {status}"
+    if isinstance(exc, anthropic.APITimeoutError):
+        return "timed out"
+    if isinstance(exc, anthropic.APIConnectionError):
+        return "connection failed"
+    return exc.__class__.__name__
+
+
+def build_criteria_graph(llm, umls, rxnorm, *, model_name: str, reference_date: date | None = None,
+                         retries: int | None = None, retry_seconds: float | None = None):
+    retries = config.CRITERIA_RETRIES if retries is None else retries
+    retry_seconds = config.CRITERIA_RETRY_SECONDS if retry_seconds is None else retry_seconds
     tools = build_tools(umls, rxnorm)
     pharmacist_llm = llm.bind_tools(tools, tool_choice="auto")  # forced tool_choice is a 400 on Opus 5.5
 
@@ -54,8 +86,24 @@ def build_criteria_graph(llm, umls, rxnorm, *, model_name: str, reference_date: 
         system = SystemMessage(content=[{"type": "text", "text": SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}}])
         return {"messages": [system, HumanMessage(content=user_message(state["context"]))], "reminders": 0}
 
+    async def call_model(messages: list):
+        """One model call, retried after a fixed wait when the endpoint fails in a retryable way.
+        Each retry is reported to the page as it happens (a custom stream event)."""
+        for attempt in range(retries + 1):
+            try:
+                return await pharmacist_llm.ainvoke(messages)
+            except Exception as exc:
+                if attempt == retries or not retryable(exc):
+                    raise
+                get_stream_writer()({
+                    "type": "status",
+                    "message": f"The model endpoint didn't accept the request ({failure_text(exc)}). "
+                               f"Trying again in {retry_seconds:g} s (retry {attempt + 1} of {retries}).",
+                })
+                await wait(retry_seconds)
+
     async def pharmacist(state: CriteriaState) -> dict:
-        response = await pharmacist_llm.ainvoke(state["messages"])
+        response = await call_model(state["messages"])
         if response.response_metadata.get("stop_reason") == "refusal":
             return {"messages": [response], "error": "The model declined to review these criteria."}
         if response.response_metadata.get("stop_reason") == "max_tokens" and not response.tool_calls:

@@ -14,6 +14,8 @@ UMLS_API_KEY=...
 # Optional: a different model or an API gateway/proxy
 # CRITERIA_MODEL=claude-sonnet-5-5
 # ANTHROPIC_BASE_URL=https://gateway.example.com
+# CRITERIA_RETRIES=3            # retries per model call (connection, timeout, 408/409/425/429, 5xx)
+# CRITERIA_RETRY_SECONDS=5      # wait before each retry
 
 # Member tables (catalog.schema.table works too)
 MEMBERS_TABLE=main.claims.members
@@ -62,6 +64,8 @@ RxNorm (RxNav) needs no key. Its root is `RXNAV` in `terminology/rxnorm.py`.
 | `CRITERIA_MODEL` | `claude-opus-5-5` | **yes** | Model for the agent. Blank = default |
 | `ANTHROPIC_BASE_URL` | none (Anthropic's default) | **yes** | Custom endpoint, e.g. a gateway. Passed only when set |
 | `CRITERIA_EFFORT` | `high` | no | `output_config.effort` sent with each call |
+| `CRITERIA_RETRIES` | `3` | **yes** | Retries per model call when it fails in a way waiting can fix. `0` turns retrying off |
+| `CRITERIA_RETRY_SECONDS` | `5` | **yes** | Wait before each retry. Raise it for endpoints that refuse requests arriving too soon |
 | `RECURSION_LIMIT` | `100` | no (`criteria_graph.py`) | Max graph steps (~45 rounds of lookups) |
 
 The model is called with options tuned for Claude Opus 5.5 (adaptive thinking with progress

@@ -282,3 +282,17 @@ def test_running_without_a_warehouse_says_what_to_set(client_with):
     r = c.post("/api/trials/NCT05909046/filters/review/count")
     assert r.status_code == 503 and "Databricks SQL warehouse" in r.json()["detail"]
     assert c.post("/api/trials/NCT09999999/filters/review/count").status_code == 404
+
+
+def test_a_failing_model_endpoint_is_retried_and_reported_live(client_with, monkeypatch):
+    from tests.webapp.fakes_agent import api_error
+    monkeypatch.setattr(config, "CRITERIA_RETRY_SECONDS", 0)
+    c = client_with(FakeSource(), llm_factory=lambda: ScriptedChatModel(turns=[api_error(503)] + scripted_turns()))
+    events = sse_events(c.post("/api/trials/NCT05909046/filters/criteria/run").text)
+    assert any(e["type"] == "status" and "(HTTP 503). Trying again in 0 s (retry 1 of 3)" in e["message"] for e in events)
+    assert events[-1]["type"] == "done"
+
+    c = client_with(FakeSource(), llm_factory=lambda: ScriptedChatModel(turns=[api_error(429)] * 4))
+    events = sse_events(c.post("/api/trials/NCT05909046/filters/criteria/run").text)
+    assert events[-1] == {"type": "error", "message": "The model endpoint is rate limiting requests after 3 retries "
+                                                      "0 s apart. Try again in a minute."}

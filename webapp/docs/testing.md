@@ -13,7 +13,8 @@ The suite makes **no network calls and needs no keys**:
 
 | Fake | File | Stands in for |
 |---|---|---|
-| `ScriptedChatModel` | `fakes_agent.py` | the Claude chat model: returns scripted `AIMessage`s in order, records what it was sent |
+| `ScriptedChatModel` | `fakes_agent.py` | the Claude chat model: returns scripted `AIMessage`s in order (raising any turn that's an exception), records what it was sent |
+| `api_error(status)` | `fakes_agent.py` | the exception the Anthropic SDK raises for a status (`0` = connection failed) |
 | `scripted_turns()`, `SUBMISSION`, `CONTEXT`, `ELIGIBILITY` | `fakes_agent.py` | a 3-call run: two lookup rounds, then `submit_criteria` with 5 rules (covered, codable diagnosis, lab, codable medication, a made-up drug) |
 | `FakeIcd` | `fakes_agent.py` | UMLS ICD-10-CM (`O24.11`, `E11`) |
 | `FakeRx` | `fakes_agent.py` | RxNorm: empagliflozin/dapagliflozin, class A10BK, NDCs, brand names |
@@ -32,7 +33,7 @@ The suite makes **no network calls and needs no keys**:
 | `test_summary.py` | only open US sites count; state and city breakdowns; MeSH before sponsor text; labels; timing windows; table rows and capping; empty result |
 | `test_trial_summary.py` | eligibility parsing (standard and group-prefixed headings, inline content, nested bullets, no headings, empty); site KPIs; closed-trial banners; timeline; age text |
 | `test_eligibility_filters.py` | step 1: inclusive limits, units, invalid ages, min > max, sex codes, gender-based warning |
-| `test_criteria_agent.py` | step 2: full scripted run (groups, code/drug checks, SQL with LPAD and RLIKE, tool backing, usage); remind and give-up paths; invalid submission sent back; refusal; quote matching; windows; partial must-have drug rules; must-not rules stay in review; prompt contents; name pattern |
+| `test_criteria_agent.py` | step 2: full scripted run (groups, code/drug checks, SQL with LPAD and RLIKE, tool backing, usage); remind and give-up paths; invalid submission sent back; refusal; quote matching; windows; partial must-have drug rules; must-not rules stay in review; prompt contents; name pattern; endpoint retries (wait used, which failures retry, limit, SDK retries off) |
 | `test_review.py` | step 3: every condition commented with its source; expert checks; rules left out listed after the query; a line break can't escape a comment; age-and-sex-only; gender-based expert check; the `;` isn't swallowed by a trailing comment |
 | `test_databricks.py` | Statement API client: request shape and auth, polling, cancel on timeout, failed statement message, rejected token, result chunks, missing settings |
 | `test_rxnorm.py` | products, current + historical NDCs, brand names |
