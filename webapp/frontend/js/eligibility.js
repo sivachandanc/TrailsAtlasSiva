@@ -65,7 +65,7 @@ loadWarehouse();
 })();
 
 function renderHeader(f) {
-  document.title = `Eligibility filters: ${f.trial_id} · Trial Atlas`;
+  document.title = `Eligibility filters: ${f.trial_id} · Trails-POC`;
   const status = f.status ? f.status.replace(/_/g, " ").toLowerCase() : "";
   $("#trial-line").innerHTML = `<a href="/trials/${f.trial_id}">${f.trial_id}</a> · ${escapeHtml(f.title || "")}` +
     (status ? ` <span class="pill ${f.status.toLowerCase().replace(/_/g, "-")}">${escapeHtml(status[0].toUpperCase() + status.slice(1))}</span>` : "");
@@ -488,7 +488,7 @@ async function loadWarehouse() {
   if (w.configured) {
     $("#rv-run-note").textContent = `Runs the query above on warehouse ${w.warehouse_id} at ${w.host.replace(/^https?:\/\//, "")}`
       + `${w.catalog ? ` (catalog ${w.catalog}${w.schema_name ? `, schema ${w.schema_name}` : ""})` : ""}. Each run uses warehouse compute. `
-      + "Results are shown on this page only: Trial Atlas doesn't save, cache or log them.";
+      + "Results are shown on this page only: Trails-POC doesn't save, cache or log them.";
     $("#rv-run-ready").hidden = false;
     return;
   }

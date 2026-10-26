@@ -38,7 +38,7 @@ async def lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title="Trial Atlas", lifespan=lifespan)
+app = FastAPI(title="Trails-POC", lifespan=lifespan)
 app.include_router(router, prefix="/api")
 
 

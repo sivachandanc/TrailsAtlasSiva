@@ -25,7 +25,7 @@ if (condition) {
 }
 
 async function runSearch(cond) {
-  document.title = `${cond} · Trial Atlas`;
+  document.title = `${cond} · Trails-POC`;
   showLoading();
   try {
     const params = new URLSearchParams({ condition: cond, source: "clinicaltrials_gov", country: "United States" });

@@ -1,6 +1,6 @@
-# Trial Atlas: web app documentation
+# Trails-POC: web app documentation
 
-Trial Atlas finds open clinical trials in the US and turns a trial's eligibility rules into SQL that
+Trails-POC finds open clinical trials in the US and turns a trial's eligibility rules into SQL that
 finds matching health-plan members in claims data. This folder documents the whole web app
 (`webapp/`), from the HTTP request to the SQL that runs on Databricks.
 

@@ -28,7 +28,7 @@ if (from) {
 load(rawId);
 
 async function load(id) {
-  document.title = `${id} · Trial Atlas`;
+  document.title = `${id} · Trails-POC`;
   $("#skeleton").hidden = false;
   try {
     const res = await fetch(`/api/trials/${encodeURIComponent(id)}`);
@@ -79,7 +79,7 @@ function paragraphs(text) {
 function render(d) {
   view.data = d;
   const t = d.trial;
-  document.title = `${t.id}: ${t.title || "Trial"} · Trial Atlas`;
+  document.title = `${t.id}: ${t.title || "Trial"} · Trails-POC`;
   $("#dashboard").hidden = false;
 
   $("#trial-id").textContent = t.id;

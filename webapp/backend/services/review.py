@@ -130,7 +130,7 @@ def build_review(demographics: DemographicFilter, criteria: CriteriaFilter | Non
 
     ref = criteria.reference_date if criteria else demographics.reference_date
     header = [f"Trial {demographics.trial_id}: {oneline(demographics.title)}",
-              f"Eligibility filters from Trial Atlas. Dates are measured from {ref.isoformat()}.",
+              f"Eligibility filters from Trails-POC. Dates are measured from {ref.isoformat()}.",
               "Each condition quotes the eligibility text or ClinicalTrials.gov field it came from."]
     if criteria:
         header.append(f"Step 2 rules were read by {criteria.model} and checked against UMLS and RxNorm.")
