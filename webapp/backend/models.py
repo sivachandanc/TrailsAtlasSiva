@@ -11,6 +11,13 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class SiteContact(BaseModel):
+    name: str | None = None
+    role: str | None = None
+    phone: str | None = None
+    email: str | None = None
+
+
 class Site(BaseModel):
     facility: str | None = None
     city: str | None = None
@@ -20,6 +27,7 @@ class Site(BaseModel):
     lat: float | None = None
     lon: float | None = None
     status: str | None = None  # site-level recruitment status; often missing
+    contacts: list[SiteContact] = []  # only on a single trial's detail fetch
 
 
 class Trial(BaseModel):
@@ -393,6 +401,13 @@ class ReviewItem(BaseModel):
     note: str  # what it does, what the expert checks, or why it isn't in the SQL
 
 
+class ReviewCondition(BaseModel):
+    id: str  # "AGE", "SEX" or the rule's ID
+    label: str  # short text for the funnel, e.g. "R3 · No prior SGLT2 inhibitor"
+    sql: str  # the condition exactly as in the WHERE
+    expert: bool  # an expert confirms the members it returns
+
+
 class ReviewFilter(BaseModel):
     trial_id: str
     title: str | None
@@ -408,6 +423,7 @@ class ReviewFilter(BaseModel):
     warnings: list[str]
     sql: str  # one Databricks SQL query, with a comment on every condition quoting its source
     query: str  # the same SELECT without the closing ; and the trailing notes: what the count and list wrap
+    conditions: list[ReviewCondition] = []  # the WHERE's conditions in order: the dashboard's funnel steps
 
 
 class WarehouseStatus(BaseModel):
@@ -436,6 +452,103 @@ class MemberList(BaseModel):
     truncated: bool  # more members match than the limit
     criteria_built: bool
     statement: str
+    elapsed_ms: int
+
+
+# ---------- member dashboard (aggregates from the warehouse plus trial-site proximity) ----------
+
+class FunnelStep(BaseModel):
+    id: str  # "ALL", "AGE", "SEX" or a rule ID
+    label: str
+    members: int  # members left after this step
+    dropped: int  # removed by this step
+    expert: bool
+
+
+class AgeBand(BaseModel):
+    label: str  # "40–44"
+    female: int
+    male: int
+    other: int  # gender_cde not M or F
+
+
+class DistanceBand(BaseModel):
+    label: str  # "10–25 mi", "Unknown"
+    members: int
+    cumulative_share: float | None  # 0..1 of members with a known location; None for "Unknown"
+
+
+class DashboardSite(BaseModel):
+    index: int
+    facility: str | None
+    city: str | None
+    state: str | None
+    zip: str | None
+    status: str | None
+    status_label: str
+    open: bool
+    lat: float | None
+    lon: float | None
+    located_by: Literal["geopoint", "zip", "none"]
+    contacts: list[SiteContact]
+    within: dict[str, int]  # radius in miles ("25") -> eligible members within it
+    catchment: int  # members for whom this is the nearest open site (0 for sites not recruiting)
+
+
+class DashboardZip(BaseModel):
+    zip: str
+    state: str | None
+    lat: float
+    lon: float
+    members: int
+    nearest_site: int | None  # DashboardSite.index
+    miles: float | None
+
+
+class StateMembers(BaseModel):
+    state: str
+    members: int
+    open_sites: int
+
+
+class DashboardKpis(BaseModel):
+    eligible: int
+    all_members: int
+    enrollment: int | None  # the trial's enrollment target
+    us_sites: int
+    open_us_sites: int
+    within: dict[str, int]  # radius -> members within it of an open site
+    median_miles: float | None
+    located: int  # members whose ZIP was found
+    unknown_location: int
+    expert_checks: int
+    not_applied: int
+    flagged: int
+
+
+class MemberDashboard(BaseModel):
+    trial_id: str
+    title: str | None
+    status_label: str
+    phase_labels: list[str]
+    conditions: list[str]
+    reference_date: date
+    criteria_built: bool
+    model: str | None
+    ran_at: datetime
+    radii: list[int]
+    distance_to: Literal["open", "all"]  # "all" when the trial has no open US site
+    kpis: DashboardKpis
+    banners: list[str]
+    funnel: list[FunnelStep]
+    age_bands: list[AgeBand]
+    median_age: float | None
+    sex: list[Count]
+    distance_bands: list[DistanceBand]
+    sites: list[DashboardSite]
+    zips: list[DashboardZip]
+    by_state: list[StateMembers]
+    statements: dict[str, str]  # exactly what ran on the warehouse, by name
     elapsed_ms: int
 
 

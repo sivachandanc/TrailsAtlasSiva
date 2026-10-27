@@ -454,8 +454,6 @@ function renderReview(r) {
       <div class="traces">${r[g.key].map(reviewItem).join("")}</div>
     </section>`).join("");
   $("#rv-sql").textContent = r.sql;
-  // The query changed (e.g. step 2 just finished), so earlier results no longer match it
-  for (const id of ["#rv-count-result", "#rv-list-result", "#rv-ran", "#rv-run-error"]) $(id).hidden = true;
 }
 
 // Links inside step 3 jump within the page instead of switching steps
@@ -478,9 +476,8 @@ $("#rv-download").addEventListener("click", () => {
 
 // ---------- step 3: running the query on Databricks ----------
 
-const LIST_LABELS = { member_id: "Member ID", first_nme: "First name", last_nme: "Last name", birth_dte: "Birth date",
-  gender_cde: "Sex", state_or_province_cde: "State", zip_5_postal_cde: "ZIP" };
-let memberList = null;
+// The dashboard page runs the query; the server rebuilds it from this trial's checked rules
+$("#rv-dashboard").href = `/trials/${encodeURIComponent(trialId)}/members`;
 
 async function loadWarehouse() {
   let w;
@@ -488,11 +485,11 @@ async function loadWarehouse() {
   if (w.configured) {
     $("#rv-run-note").textContent = `Runs the query above on warehouse ${w.warehouse_id} at ${w.host.replace(/^https?:\/\//, "")}`
       + `${w.catalog ? ` (catalog ${w.catalog}${w.schema_name ? `, schema ${w.schema_name}` : ""})` : ""}. Each run uses warehouse compute. `
-      + "Results are shown on this page only: Trails-POC doesn't save, cache or log them.";
+      + "Results are shown on the dashboard only: Trails-POC doesn't save, cache or log them.";
     $("#rv-run-ready").hidden = false;
     return;
   }
-  $("#rv-run-note").textContent = "Count the matching members, or list them, straight from your Databricks SQL warehouse.";
+  $("#rv-run-note").textContent = "See how many members match, who they are and how near the trial's sites they live, straight from your Databricks SQL warehouse.";
   const setup = $("#rv-run-setup");
   setup.hidden = false;
   setup.innerHTML = `<p>Not set up yet. Add these to the <code>.env</code> file and restart the app:</p>
@@ -502,70 +499,3 @@ DATABRICKS_HTTP_PATH=/sql/1.0/warehouses/abc123   # or DATABRICKS_WAREHOUSE_ID=a
 # Optional: DATABRICKS_CATALOG, DATABRICKS_SCHEMA, MEMBERS_TABLE, MX_CLAIMS_TABLE, RX_CLAIMS_TABLE</pre>
     <p class="muted small-note">Still missing: ${w.missing.map(escapeHtml).join(", ")}. The host and HTTP path are on the warehouse's Connection details tab.</p>`;
 }
-
-async function runOnWarehouse(path, busyText) {
-  const buttons = [$("#rv-count"), $("#rv-list")];
-  buttons.forEach((b) => { b.disabled = true; });
-  $("#rv-run-error").hidden = true;
-  const status = $("#rv-run-status");
-  status.hidden = false;
-  status.innerHTML = `<div class="spinner" role="presentation"></div><p>${escapeHtml(busyText)}</p>`;
-  try {
-    const res = await fetch(api(path), { method: "POST" });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(typeof body.detail === "string" ? body.detail : `The query didn't run (HTTP ${res.status}).`);
-    $("#rv-ran").hidden = false;
-    $("#rv-ran-sql").textContent = body.statement;
-    return body;
-  } catch (err) {
-    const el = $("#rv-run-error");
-    el.hidden = false;
-    el.innerHTML = `<h2>The query didn't run</h2><p>${escapeHtml(err.message)}</p>`;
-    return null;
-  } finally {
-    status.hidden = true;
-    buttons.forEach((b) => { b.disabled = false; });
-  }
-}
-
-const seconds = (ms) => `${(ms / 1000).toFixed(1)} s`;
-
-$("#rv-count").addEventListener("click", async () => {
-  const r = await runOnWarehouse("review/count", "Counting members on Databricks… A stopped warehouse can take a minute to start.");
-  if (!r) return;
-  const el = $("#rv-count-result");
-  el.hidden = false;
-  const expert = data.review ? data.review.expert_checks.length : 0;
-  el.innerHTML = `<p class="kpi-value">${fmt.format(r.count)}</p>
-    <p class="kpi-label">member${r.count === 1 ? "" : "s"} match the query</p>
-    <p class="kpi-sub">Ran in ${seconds(r.elapsed_ms)}.${r.criteria_built ? "" : " Step 2 isn't built, so this counts age and sex only."}${
-      expert ? ` ${expert} condition${expert === 1 ? " needs" : "s need"} an expert check before these members are confirmed.` : ""}</p>`;
-});
-
-$("#rv-list").addEventListener("click", async () => {
-  const r = await runOnWarehouse("review/members", "Getting the member list from Databricks…");
-  if (!r) return;
-  memberList = r;
-  $("#rv-list-result").hidden = false;
-  $("#rv-list-note").textContent = r.truncated
-    ? `Showing the first ${fmt.format(r.limit)} members by member ID. More match: use Count members for the total, or run the query in Databricks.`
-    : `${fmt.format(r.rows.length)} member${r.rows.length === 1 ? "" : "s"}, ordered by member ID. Ran in ${seconds(r.elapsed_ms)}.`;
-  $("#rv-list-head").innerHTML = `<tr>${r.columns.map((c) => `<th>${escapeHtml(LIST_LABELS[c] || c)}</th>`).join("")}</tr>`;
-  $("#rv-list-body").innerHTML = r.rows.length
-    ? r.rows.map((row) => `<tr>${row.map((v) => `<td>${escapeHtml(v ?? "")}</td>`).join("")}</tr>`).join("")
-    : `<tr class="table-empty"><td colspan="${r.columns.length}">No members match.</td></tr>`;
-});
-
-function csvField(v) {
-  const s = v == null ? "" : String(v);
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-
-$("#rv-list-csv").addEventListener("click", () => {
-  if (!memberList) return;
-  const csv = [memberList.columns, ...memberList.rows].map((row) => row.map(csvField).join(",")).join("\r\n");
-  const url = URL.createObjectURL(new Blob([csv + "\r\n"], { type: "text/csv" }));
-  const a = Object.assign(document.createElement("a"), { href: url, download: `${memberList.trial_id}-members.csv` });
-  document.body.appendChild(a); a.click(); a.remove();
-  URL.revokeObjectURL(url);
-});

@@ -133,12 +133,8 @@ JDBC or ODBC driver is needed.
 The **Run on Databricks** panel sits under the query:
 - **Not set up:** shows the `.env` lines to add and what's still missing.
 - **Set up:** says which warehouse it will use, that runs use warehouse compute, and that nothing
-  is saved. Then:
-  - **Count members** shows the number and the time taken. It reminds you when step 2 isn't
-    built, and how many conditions need an expert check.
-  - **Show member list** shows a table (member ID, name, birth date, sex, state, ZIP) and says
-    when the list was cut off at the limit.
-  - **Download CSV** builds the file in the browser, quoting fields with commas or quotes.
-  - **Show exactly what ran** shows the statement sent to Databricks.
+  is saved. **Open member dashboard** opens `/trials/{id}/members`, which runs the query and shows
+  the count, the funnel, who the members are and how far they live from each site. See
+  [member-dashboard.md](member-dashboard.md).
 
-  Results are cleared whenever the query changes, e.g. after step 2 finishes.
+`POST …/review/count` is still available to API clients; the page no longer calls it.

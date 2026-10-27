@@ -7,7 +7,7 @@ imported, so the app doesn't depend on the sandbox).
 import httpx
 
 from webapp.backend import config
-from webapp.backend.models import Arm, Contact, Intervention, Official, Outcome, Site, Trial, TrialDetail
+from webapp.backend.models import Arm, Contact, Intervention, Official, Outcome, Site, SiteContact, Trial, TrialDetail
 from webapp.backend.sources.base import SourceError, TrialNotFound
 
 PROTOCOL = "protocolSection"
@@ -37,6 +37,8 @@ TRIAL_FIELDS = {
 SITES_PATH = (PROTOCOL, "contactsLocationsModule", "locations")
 SITE_API_FIELDS = ["LocationFacility", "LocationStatus", "LocationCity", "LocationState",
                    "LocationZip", "LocationCountry", "LocationGeoPoint"]
+# Each site's own contacts: asked for on the single-trial fetch only, to keep searches light
+SITE_CONTACT_FIELDS = ["LocationContactName", "LocationContactRole", "LocationContactPhone", "LocationContactEMail"]
 
 
 def get_path(value, path: tuple[str, ...]):
@@ -60,6 +62,8 @@ def to_trial(study: dict) -> Trial:
             facility=s.get("facility"), city=s.get("city"), state=s.get("state"), zip=s.get("zip"),
             country=s.get("country"), status=s.get("status"),
             lat=(s.get("geoPoint") or {}).get("lat"), lon=(s.get("geoPoint") or {}).get("lon"),
+            contacts=[SiteContact(name=c.get("name"), role=c.get("role"), phone=c.get("phone"), email=c.get("email"))
+                      for c in s.get("contacts") or []],
         )
         for s in get_path(study, SITES_PATH) or []
     ]
@@ -105,7 +109,7 @@ DETAIL_LISTS = {
                   {"name": "name", "affiliation": "affiliation", "role": "role"}),
 }
 DETAIL_API_FIELDS = (
-    [api for api, _ in TRIAL_FIELDS.values()] + SITE_API_FIELDS
+    [api for api, _ in TRIAL_FIELDS.values()] + SITE_API_FIELDS + SITE_CONTACT_FIELDS
     + [api for api, _ in DETAIL_FIELDS.values()]
     + [f for api_fields, *_ in DETAIL_LISTS.values() for f in api_fields]
 )

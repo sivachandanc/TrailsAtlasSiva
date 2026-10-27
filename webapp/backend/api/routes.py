@@ -1,8 +1,9 @@
 """JSON API, mounted at /api."""
 
+import asyncio
 import json
 from collections.abc import Callable
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Annotated
 
 import anthropic
@@ -13,11 +14,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 
 from webapp.backend import config
 from webapp.backend.models import (
-    CriteriaFilter, DemographicFilter, MemberColumn, MemberCount, MemberList, MemberSchema, MemberTable, ReviewFilter,
-    WarehouseStatus,
+    CriteriaFilter, DemographicFilter, MemberColumn, MemberCount, MemberDashboard, MemberList, MemberSchema,
+    MemberTable, ReviewFilter, WarehouseStatus,
     SearchResult, SourceOption, TrialDashboard,
 )
 from webapp.backend.services.eligibility_filters import build_demographic_filter
+from webapp.backend.services.member_dashboard import (
+    Proximity, demographics_sql, funnel_sql, geography_sql, member_distances, summarize as summarize_members,
+)
 from webapp.backend.services.review import build_review, count_sql, members_sql
 from webapp.backend.services.cache import TTLCache
 from webapp.backend.services.summary import summarize
@@ -245,10 +249,35 @@ async def list_members(sources: Sources, warehouse: Warehouse, response: Respons
     statement = members_sql(review, limit)
     result = await run_on_warehouse(warehouse, statement, row_limit=limit + 1)
     response.headers["Cache-Control"] = "no-store"
-    rows = result["rows"]
-    return MemberList(trial_id=review.trial_id, columns=result["columns"], rows=rows[:limit], limit=limit,
-                      truncated=len(rows) > limit, criteria_built=review.criteria_built, statement=statement,
+    rows = result["rows"][:limit]
+    # Each member's nearest open trial site, measured from their ZIP code's Census centroid
+    prox = Proximity(await load_trial(sources, trial_id, source))
+    zip_at = result["columns"].index("zip_5_postal_cde")
+    rows = [row + list(member_distances(prox, row[zip_at])) for row in rows]
+    return MemberList(trial_id=review.trial_id, columns=result["columns"] + ["nearest_site", "distance_miles"],
+                      rows=rows, limit=limit,
+                      truncated=len(result["rows"]) > limit, criteria_built=review.criteria_built, statement=statement,
                       elapsed_ms=result["elapsed_ms"])
+
+
+@router.post("/trials/{trial_id}/filters/review/dashboard", tags=["warehouse"])
+async def member_dashboard(sources: Sources, warehouse: Warehouse, response: Response, trial_id: str,
+                           source: str = "clinicaltrials_gov") -> MemberDashboard:
+    """Run three aggregate statements built from the step 3 query (a funnel, age and sex, ZIP codes) and
+    measure how far the eligible members live from the trial's sites. No member names or IDs are returned."""
+    dashboard = await load_trial(sources, trial_id, source)
+    review = await review_for(sources, trial_id, source)
+    statements = {"funnel": funnel_sql(review), "demographics": demographics_sql(review),
+                  "geography": geography_sql(review)}
+    results = await asyncio.gather(*(run_on_warehouse(warehouse, sql) for sql in statements.values()))
+    funnel, demographics, geography = (r["rows"] for r in results)
+    # Distances to every site from up to ~40k ZIP codes: off the event loop
+    result = await asyncio.to_thread(
+        summarize_members, dashboard, review, funnel_rows=funnel, demo_rows=demographics, geo_rows=geography,
+        radii=config.DASHBOARD_RADII_MILES, ran_at=datetime.now(timezone.utc), statements=statements,
+        elapsed_ms=max(r["elapsed_ms"] for r in results))
+    response.headers["Cache-Control"] = "no-store"
+    return result
 
 
 def sse(event: dict) -> str:

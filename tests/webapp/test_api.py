@@ -41,7 +41,8 @@ class FakeSource:
         return TrialDetail(id=trial_id, status="RECRUITING", title="DIP", min_age="18 Years", sex="FEMALE",
                            mesh_ids=["D1"], mesh_terms=["Term D1"], conditions=["Gestational Diabetes"],
                            eligibility_criteria=ELIGIBILITY,
-                           sites=[Site(state="Ohio", country="United States", status="RECRUITING")])
+                           sites=[Site(city="Columbus", state="Ohio", country="United States", status="RECRUITING", zip="43210",
+                                       lat=39.96118, lon=-82.99879)])
 
     async def count_open(self, country):
         if self.fail:
@@ -50,7 +51,7 @@ class FakeSource:
 
 
 class FakeWarehouse:
-    """Answers the count and the member list like Databricks would (every value a string)."""
+    """Answers the count, the member list and the dashboard's statements like Databricks would (every value a string)."""
     host, warehouse_id, catalog, schema = "https://adb-1.azuredatabricks.net", "wh1", None, None
 
     def __init__(self, configured=True):
@@ -60,12 +61,23 @@ class FakeWarehouse:
     def missing(self):
         return [] if self.configured else ["DATABRICKS_HOST"]
 
+    @staticmethod
+    def result(columns, rows):
+        return {"columns": columns, "rows": rows, "truncated": False, "statement_id": "s3", "elapsed_ms": 7}
+
     async def query(self, statement, row_limit=None):
         if not self.configured:
             raise WarehouseNotConfigured("Running the query needs a Databricks SQL warehouse.")
         self.statements.append(statement)
         if statement.startswith("SELECT COUNT(*)"):
             return {"columns": ["member_count"], "rows": [["2"]], "truncated": False, "statement_id": "s1", "elapsed_ms": 5}
+        if "members left after each condition" in statement:
+            steps = statement.count("UNION ALL") + 1
+            return self.result(["step", "members"], [[str(k), str(max(2, 10 - 4 * k))] for k in range(steps)])
+        if statement.startswith("SELECT CAST(FLOOR(MONTHS_BETWEEN"):
+            return self.result(["age_years", "sex", "members"], [["46", "F", "1"], ["36", "F", "1"]])
+        if statement.startswith("SELECT m.zip_5_postal_cde"):
+            return self.result(["zip", "state", "members"], [["43004", "OH", "1"], ["43017", "OH", "1"]])
         rows = [["1", "Ann", "Lee", "1980-01-01", "F", "OH", "43004"], ["2", "Bea", "Kim", "1990-02-02", "F", "OH", "43017"]]
         return {"columns": member_schema.MEMBER_LIST_COLUMNS, "rows": rows[:row_limit], "truncated": False,
                 "statement_id": "s2", "elapsed_ms": 6}
@@ -265,7 +277,10 @@ def test_count_and_list_run_the_review_query_rebuilt_on_the_server(client_with):
     r = c.post("/api/trials/NCT05909046/filters/review/members")
     body = r.json()
     assert r.headers["cache-control"] == "no-store" and body["rows"][0][:3] == ["1", "Ann", "Lee"] and not body["truncated"]
-    assert body["columns"] == member_schema.MEMBER_LIST_COLUMNS and body["limit"] == config.MEMBER_LIST_LIMIT
+    assert body["columns"] == member_schema.MEMBER_LIST_COLUMNS + ["nearest_site", "distance_miles"]
+    assert body["limit"] == config.MEMBER_LIST_LIMIT
+    # Each member's nearest open site, from their ZIP's Census centroid (43004 and 43017 are near Columbus)
+    assert [row[-2:] for row in body["rows"]] == [["Columbus, Ohio", "10.9"], ["Columbus, Ohio", "13.0"]]
     assert f"WHERE m.member_id IN (\n{review['query']}\n)" in wh.statements[1]
     assert wh.statements[1].endswith(f"LIMIT {config.MEMBER_LIST_LIMIT + 1}")
 
@@ -282,6 +297,33 @@ def test_running_without_a_warehouse_says_what_to_set(client_with):
     r = c.post("/api/trials/NCT05909046/filters/review/count")
     assert r.status_code == 503 and "Databricks SQL warehouse" in r.json()["detail"]
     assert c.post("/api/trials/NCT09999999/filters/review/count").status_code == 404
+
+
+def test_the_member_dashboard_runs_aggregates_only_and_measures_distance_to_sites(client_with):
+    wh = FakeWarehouse()
+    c = client_with(FakeSource(), warehouse=wh)
+    review = c.get("/api/trials/NCT05909046/filters/review").json()
+    r = c.post("/api/trials/NCT05909046/filters/review/dashboard")
+    d = r.json()
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    # The three statements wrap the server's own query; none of them selects names or member IDs
+    assert len(wh.statements) == 3 and all("first_nme" not in s for s in wh.statements)
+    assert f"WHERE m.member_id IN (\n{review['query']}\n)" in d["statements"]["geography"]
+    assert d["kpis"]["eligible"] == 2 and d["kpis"]["all_members"] == 10 and d["kpis"]["open_us_sites"] == 1
+    # Step 2 isn't built here, so the query has age and sex only
+    assert [s["id"] for s in d["funnel"]] == ["ALL", "AGE", "SEX"] == ["ALL"] + [c["id"] for c in review["conditions"]]
+    assert [s["members"] for s in d["funnel"]] == [10, 6, 2] and [s["dropped"] for s in d["funnel"]] == [0, 4, 4]
+    assert d["kpis"]["within"] == {"10": 0, "25": 2, "50": 2, "100": 2} and d["kpis"]["median_miles"] == 10.9
+    assert d["sites"][0]["catchment"] == 2 and d["sites"][0]["located_by"] == "geopoint"
+    assert [z["zip"] for z in d["zips"]] == ["43004", "43017"] and d["by_state"][0] == {"state": "Ohio", "members": 2, "open_sites": 1}
+    assert d["median_age"] == 36 and d["sex"] == [{"label": "Female", "count": 2}]
+
+
+def test_the_member_dashboard_needs_a_warehouse(client_with):
+    c = client_with(FakeSource(), warehouse=FakeWarehouse(configured=False))
+    r = c.post("/api/trials/NCT05909046/filters/review/dashboard")
+    assert r.status_code == 503 and "Databricks SQL warehouse" in r.json()["detail"]
+    assert c.post("/api/trials/NCT09999999/filters/review/dashboard").status_code == 404
 
 
 def test_a_failing_model_endpoint_is_retried_and_reported_live(client_with, monkeypatch):

@@ -41,7 +41,8 @@ webapp/
 │   │   ├── trial_summary.py       one trial → dashboard; eligibility text parser
 │   │   ├── eligibility_filters.py step 1: age and sex → SQL
 │   │   ├── criteria_filter.py     step 2: checks the agent's rules, writes SQL
-│   │   └── review.py              step 3: combined commented query, count and list SQL
+│   │   ├── review.py              step 3: combined commented query, count and list SQL
+│   │   └── member_dashboard.py    member dashboard: funnel/demographics/geography SQL, distances
 │   ├── agents/
 │   │   ├── llm.py                 builds the Claude chat model
 │   │   ├── criteria_graph.py      the LangGraph state machine
@@ -51,12 +52,16 @@ webapp/
 │   ├── terminology/
 │   │   ├── umls.py                ICD-10-CM search, code check, child codes
 │   │   └── rxnorm.py              drug search, ATC classes, NDCs, brand names
-│   └── warehouse/
-│       └── databricks.py          runs SQL on a Databricks SQL warehouse
+│   ├── warehouse/
+│   │   └── databricks.py          runs SQL on a Databricks SQL warehouse
+│   └── geo/
+│       ├── __init__.py            ZIP → point, haversine miles, state codes → names
+│       ├── zip_centroids.csv      US Census 2024 ZCTA centroids (~33.8k ZIPs)
+│       └── build_zip_centroids.py regenerates the CSV from the Census Gazetteer
 ├── frontend/
-│   ├── index.html, search.html, trial.html, eligibility.html, data-schema.html
+│   ├── index.html, search.html, trial.html, eligibility.html, members.html, data-schema.html
 │   ├── js/common.js               nav, search box, helpers shared by every page
-│   ├── js/{home,search,trial,eligibility,data-schema}.js   one script per page
+│   ├── js/{home,search,trial,eligibility,members,data-schema}.js   one script per page
 │   ├── styles.css                 all styles; light and dark themes
 │   └── us_tiles.js                US state tile-map layout
 └── docs/                          this documentation
@@ -80,7 +85,7 @@ tests/webapp/                      pytest suite (no network)
 Routes get these through FastAPI dependencies (`get_sources`, `get_umls`, `get_rxnorm`,
 `get_llm_factory`, `get_warehouse` in `routes.py`). Tests override the dependencies with fakes.
 
-`config.py` calls `load_dotenv()` at import, so `.env` at the repo root is read before anything else.
+`config.py` calls `load_dotenv(<repo root>/.env, override=True)` at import, so `.env` is read before anything else and its values win over variables already set in the environment.
 
 ## Request flow, end to end
 
@@ -94,8 +99,11 @@ Routes get these through FastAPI dependencies (`get_sources`, `get_umls`, `get_r
                        POST /filters/criteria/run       → LangGraph agent → criteria_filter.py (SSE stream)
    step 3              GET  /filters/review             → review.py (combines 1 and 2)
                        GET  /api/warehouse              (is Databricks set up?)
-                       POST /filters/review/count       → review.py count SQL  → Databricks
-                       POST /filters/review/members     → review.py list SQL   → Databricks
+/trials/NCT…/members   member dashboard (opened from step 3)
+                       POST /filters/review/dashboard   → member_dashboard.py: 3 aggregate statements
+                                                          → Databricks, then distances to sites
+                       POST /filters/review/members     → review.py list SQL → Databricks (+ nearest site)
+                       (POST /filters/review/count      → count SQL; API only)
 /data-schema           GET /api/member-schema    → member_schema.py
 ```
 

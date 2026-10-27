@@ -111,16 +111,17 @@ def age_text(min_age: str | None, max_age: str | None) -> str:
     return "Any age"
 
 
+def site_is_open(s: Site, trial_open: bool) -> bool:
+    # Sites without their own status inherit the trial's: open only if the trial is
+    return s.status in config.OPEN_STATUSES or (s.status is None and trial_open)
+
+
 def summarize_trial(t: TrialDetail, *, source: str, today: date | None = None) -> TrialDashboard:
     today = today or date.today()
     is_open = t.status in config.OPEN_STATUSES
 
-    def site_is_open(s: Site) -> bool:
-        # Sites without their own status inherit the trial's: open only if the trial is
-        return s.status in config.OPEN_STATUSES or (s.status is None and is_open)
-
     us_sites = [s for s in t.sites if s.country == US]
-    open_us = [s for s in us_sites if site_is_open(s)]
+    open_us = [s for s in us_sites if site_is_open(s, is_open)]
     state_total = Counter(s.state for s in us_sites if s.state)
     state_open = Counter(s.state for s in open_us if s.state)
     countries = Counter(s.country for s in t.sites if s.country)

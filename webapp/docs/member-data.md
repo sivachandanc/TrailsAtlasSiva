@@ -17,7 +17,7 @@ the columns the app reads are listed; the real tables can have more.
 | `birth_dte` | DATE | age (step 1) |
 | `gender_cde` | STRING | sex: `F` / `M` (`GENDER_CODES` maps ClinicalTrials.gov's FEMALE/MALE) |
 | `first_nme`, `last_nme` | STRING | member list only |
-| `state_or_province_cde`, `zip_5_postal_cde` | STRING | member list only |
+| `state_or_province_cde`, `zip_5_postal_cde` | STRING | member list, and grouped (counts per ZIP and state) by the member dashboard to measure distance to trial sites |
 
 The list-only columns are in `list_columns`. They're kept out of the AI pharmacist's prompt, and
 listed in `MEMBER_LIST_COLUMNS` in display order.
