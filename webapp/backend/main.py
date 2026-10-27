@@ -73,6 +73,11 @@ def eligibility_page(trial_id: str) -> FileResponse:
     return FileResponse(FRONTEND_DIR / "eligibility.html")
 
 
+@app.get("/trials/{trial_id}/members", include_in_schema=False)
+def members_page(trial_id: str) -> FileResponse:
+    return FileResponse(FRONTEND_DIR / "members.html")
+
+
 @app.get("/data-schema", include_in_schema=False)
 def data_schema_page() -> FileResponse:
     return FileResponse(FRONTEND_DIR / "data-schema.html")

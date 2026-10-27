@@ -135,7 +135,8 @@ only, with a warning).
 → `ReviewFilter`: `reference_date`, `criteria_built`, `model`, `applied`, `expert_checks`,
 `not_applied`, `flagged`, `covered` (each a list of `ReviewItem`: `id`, `source_text`,
 `section`, `requirement`, `note`), `warnings`, `sql` (the full file: header, query, `;`, notes),
-`query` (the SELECT alone, which the count and list wrap).
+`query` (the SELECT alone, which the count and list wrap), `conditions` (each WHERE condition in
+order as `ReviewCondition`: `id`, `label`, `sql`, `expert`; the dashboard's funnel steps).
 See [step3-review-and-databricks.md](step3-review-and-databricks.md).
 
 ---
@@ -161,9 +162,20 @@ Runs the member list: `member_id, first_nme, last_nme, birth_dte, gender_cde,
 state_or_province_cde, zip_5_postal_cde` for members matching the query, ordered by `member_id`,
 limited to `MEMBER_LIST_LIMIT`.
 
+The server adds two columns after the query: `nearest_site` (the nearest open site's name, city
+and state) and `distance_miles` (straight line from the member's ZIP centroid, one decimal), or
+null when the ZIP isn't found.
+
 → `MemberList`: `trial_id`, `columns`, `rows` (every value a string or null), `limit`,
 `truncated` (more members match), `criteria_built`, `statement`, `elapsed_ms`.
 Header `Cache-Control: no-store`. Errors as for count.
+
+### `POST /api/trials/{trial_id}/filters/review/dashboard`
+Runs three aggregate statements built from the step 3 query (funnel, age and sex, ZIP code and
+state) and measures each ZIP's distance to the trial's sites. Returns no names or member IDs.
+
+→ `MemberDashboard` (fields in [member-dashboard.md](member-dashboard.md#response-shape-memberdashboard)).
+Header `Cache-Control: no-store`. Errors as for count, plus `404` for an unknown trial.
 
 ---
 

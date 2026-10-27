@@ -4,6 +4,12 @@ All settings live in `webapp/backend/config.py`. Values marked **.env** can be s
 at the repo root (read by `python-dotenv` at startup) or as environment variables. Restart the app
 after changing them. Secrets are never sent to the browser.
 
+**`.env` wins.** A setting in `.env` overrides the same variable set in your shell, your profile,
+or Windows/macOS system settings (`load_dotenv(..., override=True)`), so a stale system-level
+`ANTHROPIC_API_KEY` or `ANTHROPIC_BASE_URL` can't sneak in. Variables that aren't in `.env` still
+come from the environment. To switch off a system-level setting without deleting it, put it in
+`.env` with a blank value (`ANTHROPIC_BASE_URL=`): blank counts as not set.
+
 ## Example `.env`
 
 ```bash
@@ -93,7 +99,8 @@ Column names are fixed in `agents/member_schema.py`; see [member-data.md](member
 | `DATABRICKS_CATALOG` | none | **yes** | Default catalog for unqualified table names |
 | `DATABRICKS_SCHEMA` | none | **yes** | Default schema for unqualified table names |
 | `DATABRICKS_TIMEOUT_SECONDS` | `120` | no | A statement still running after this is cancelled |
-| `MEMBER_LIST_LIMIT` | `1000` | **yes** | Most members returned by "Show member list" |
+| `MEMBER_LIST_LIMIT` | `1000` | **yes** | Most members returned by the dashboard's "Load member list" |
+| `DASHBOARD_RADII_MILES` | `(10, 25, 50, 100)` | no | Distances the member dashboard counts members within, per site |
 
 Host, token and warehouse are all required; `GET /api/warehouse` reports which are missing.
 Host and HTTP path are on the warehouse's **Connection details** tab in Databricks.

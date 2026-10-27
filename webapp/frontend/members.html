@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Member dashboard · Trails-POC</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header id="nav" class="nav"></header>
+
+  <main id="main" class="main">
+    <a id="back" class="back">Back to step 3</a>
+
+    <section id="status" class="status-msg" aria-live="polite" hidden></section>
+
+    <div id="skeleton" class="dashboard skeleton" aria-hidden="true" hidden>
+      <div class="sk sk-title"></div>
+      <div class="kpis">
+        <div class="sk sk-kpi"></div><div class="sk sk-kpi"></div><div class="sk sk-kpi"></div>
+        <div class="sk sk-kpi"></div><div class="sk sk-kpi"></div><div class="sk sk-kpi"></div>
+      </div>
+      <div class="grid"><div class="sk sk-panel span-8"></div><div class="sk sk-panel span-4"></div></div>
+    </div>
+
+    <article id="dashboard" class="dashboard" hidden>
+      <header class="trial-head">
+        <div class="trial-id-row">
+          <span class="trial-id" id="trial-id"></span>
+          <span id="trial-status"></span>
+          <span id="trial-tags" class="tags"></span>
+        </div>
+        <h1 id="trial-title" class="trial-title"></h1>
+        <p class="muted md-ran" id="ran-line"></p>
+        <div class="trial-actions">
+          <button type="button" class="primary" id="rerun">Run again</button>
+          <a id="trial-link" class="button-link">View the trial</a>
+          <a id="review-link" class="ghost as-link">Review the query</a>
+        </div>
+      </header>
+
+      <div id="banners" class="banners"></div>
+
+      <section class="kpis" id="kpis" aria-label="Key numbers"></section>
+
+      <div class="grid">
+        <section class="panel span-8 md-map-panel" aria-labelledby="map-title">
+          <div class="panel-head table-head">
+            <div>
+              <h3 id="map-title">Where eligible members live</h3>
+              <p class="muted" id="map-note"></p>
+            </div>
+            <div class="md-map-tools">
+              <div class="mode md-radius" role="radiogroup" aria-label="Rings around open sites" id="radius-toggle"></div>
+              <button type="button" class="ghost small" id="fit-sites">Sites</button>
+              <button type="button" class="ghost small" id="fit-members">Members</button>
+            </div>
+          </div>
+          <div id="map" class="md-map" role="region" aria-label="Map of trial sites and eligible members by ZIP code"></div>
+          <div class="legend md-legend" id="map-legend"></div>
+        </section>
+
+        <section class="panel span-4" aria-labelledby="dist-title">
+          <div class="panel-head">
+            <h3 id="dist-title">Distance to the nearest site</h3>
+            <p class="muted" id="dist-note"></p>
+          </div>
+          <div class="chart chart-tall" id="chart-distance"></div>
+        </section>
+
+        <section class="panel span-7" aria-labelledby="funnel-title">
+          <div class="panel-head">
+            <h3 id="funnel-title">How the query narrows the members</h3>
+            <p class="muted">Members left after each condition, in the order the query applies them.</p>
+          </div>
+          <ol class="md-funnel" id="funnel"></ol>
+        </section>
+
+        <section class="panel span-5" aria-labelledby="who-title">
+          <div class="panel-head">
+            <h3 id="who-title">Who they are</h3>
+            <p class="muted" id="who-note"></p>
+          </div>
+          <div class="md-sex" id="sex-split"></div>
+          <div class="chart" id="chart-age"></div>
+        </section>
+
+        <section class="panel span-12" aria-labelledby="sites-title">
+          <div class="panel-head table-head">
+            <div>
+              <h3 id="sites-title">Recruitment potential by site</h3>
+              <p class="muted" id="sites-note"></p>
+            </div>
+            <div class="table-tools">
+              <span id="state-chip" class="chip" hidden></span>
+              <label class="visually-hidden" for="site-filter">Filter sites</label>
+              <input id="site-filter" type="search" placeholder="Filter by facility or city">
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="trials md-sites">
+              <thead id="sites-head"></thead>
+              <tbody id="sites-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel span-6" aria-labelledby="states-title">
+          <div class="panel-head">
+            <h3 id="states-title">Members by state</h3>
+            <p class="muted">Select a state to filter the sites above.</p>
+          </div>
+          <div id="tile-map" class="tile-map" role="group" aria-label="Eligible members by state"></div>
+          <div id="tile-legend" class="legend"></div>
+        </section>
+
+        <section class="panel span-6" aria-labelledby="rules-title">
+          <div class="panel-head">
+            <h3 id="rules-title">What the count does and doesn't check</h3>
+            <p class="muted" id="rules-note"></p>
+          </div>
+          <div class="md-rules" id="rules"></div>
+          <details class="json-details">
+            <summary>Show exactly what ran on Databricks</summary>
+            <div id="statements"></div>
+          </details>
+        </section>
+
+        <section class="panel span-12" aria-labelledby="list-title" id="list-panel">
+          <div class="panel-head table-head">
+            <div>
+              <h3 id="list-title">Member list</h3>
+              <p class="muted" id="list-note">Names stay in Databricks until you ask for them. The list isn't saved, cached or logged.</p>
+            </div>
+            <div class="table-tools">
+              <label class="md-inline" for="list-distance" hidden>Within
+                <select id="list-distance"></select>
+              </label>
+              <button type="button" class="ghost" id="list-csv" hidden>Download CSV</button>
+              <button type="button" class="primary" id="list-load">Load member list</button>
+            </div>
+          </div>
+          <div id="list-status" class="status-msg loading" hidden></div>
+          <div id="list-error" class="status-msg error" hidden></div>
+          <div class="table-scroll" id="list-table" hidden>
+            <table class="trials">
+              <thead id="list-head"></thead>
+              <tbody id="list-body"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <p class="muted fetched" id="fetched"></p>
+    </article>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="/us_tiles.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/members.js"></script>
+</body>
+</html>

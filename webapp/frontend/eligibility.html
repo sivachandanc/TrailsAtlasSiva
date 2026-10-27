@@ -259,28 +259,10 @@
             <div id="rv-run-setup" hidden></div>
             <div id="rv-run-ready" hidden>
               <div class="rv-actions">
-                <button type="button" class="primary" id="rv-count">Count members</button>
-                <button type="button" class="ghost" id="rv-list">Show member list</button>
+                <a class="primary as-link" id="rv-dashboard">Open member dashboard</a>
               </div>
-              <div id="rv-run-status" class="status-msg loading" hidden></div>
-              <div id="rv-run-error" class="status-msg error" hidden></div>
-              <div id="rv-count-result" class="rv-count" hidden></div>
-              <div id="rv-list-result" hidden>
-                <div class="panel-head table-head">
-                  <p class="muted" id="rv-list-note"></p>
-                  <button type="button" class="ghost" id="rv-list-csv">Download CSV</button>
-                </div>
-                <div class="table-scroll">
-                  <table class="trials">
-                    <thead id="rv-list-head"></thead>
-                    <tbody id="rv-list-body"></tbody>
-                  </table>
-                </div>
-              </div>
-              <details class="json-details" id="rv-ran" hidden>
-                <summary>Show exactly what ran</summary>
-                <pre class="code-block" id="rv-ran-sql"></pre>
-              </details>
+              <p class="muted small-note">Counts the matching members, shows how the query narrows them, who they are and how far
+                they live from each trial site, with a map. Names stay in Databricks unless you load the member list there.</p>
             </div>
           </section>
         </div>

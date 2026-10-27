@@ -16,8 +16,10 @@ The sandbox in `internal_core/` (DuckDB experiments) is separate and isn't cover
      criteria text, looks up real ICD-10-CM codes (UMLS) and drugs (RxNorm), and proposes rules. Code
      then checks every code, drug and quote and writes the SQL.
    - **Step 3, review:** both steps as one Databricks SQL query, with a comment on every condition
-     quoting the criteria text it came from. Optionally runs the query on a Databricks SQL warehouse
-     to count or list the matching members.
+     quoting the criteria text it came from.
+3. **Member dashboard:** runs the query on a Databricks SQL warehouse and shows the eligible
+   members: the funnel, age and sex, a map of where they live against the trial's sites, distance
+   to the nearest recruiting site, recruitment potential per site, and the member list on demand.
 
 ## Quick start
 
@@ -42,6 +44,7 @@ filter builder. Trial search needs no keys. Databricks settings are optional.
 | [step1-age-sex.md](step1-age-sex.md) | How ages and sex become SQL, with every edge case |
 | [step2-ai-pharmacist.md](step2-ai-pharmacist.md) | The LangGraph agent: prompt, tools, loop, checks, SQL |
 | [step3-review-and-databricks.md](step3-review-and-databricks.md) | The commented final query, and running it on Databricks |
+| [member-dashboard.md](member-dashboard.md) | The dashboard after the query: statements, distances, every panel |
 | [member-data.md](member-data.md) | The tables and columns the SQL expects |
 | [terminology.md](terminology.md) | UMLS (ICD-10-CM) and RxNorm (drugs, NDCs) clients |
 | [frontend.md](frontend.md) | Pages, scripts, styles, how each page loads and renders |
@@ -64,3 +67,5 @@ filter builder. Trial search needs no keys. Databricks settings are optional.
 | must_have / must_not_have | Whether a member needs the rule's codes/drugs (SQL `IN`) or must lack them (`NOT IN`) |
 | Codable | Claims data can answer the rule |
 | Expert check | A condition that is in the SQL but whose members an expert confirms |
+| ZCTA | Census ZIP Code Tabulation Area; its centroid places a member's ZIP on the map |
+| Catchment | The members whose nearest open site is this site |

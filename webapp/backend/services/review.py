@@ -8,11 +8,14 @@ Pure functions, no I/O.
 """
 
 from webapp.backend.agents.member_schema import MEMBER_LIST_COLUMNS, MEMBERS
-from webapp.backend.models import CriteriaFilter, CriterionOut, DemographicFilter, ReviewFilter, ReviewItem
+from webapp.backend.models import (
+    CriteriaFilter, CriterionOut, DemographicFilter, ReviewCondition, ReviewFilter, ReviewItem,
+)
 
 SECTION = {"inclusion": "Inclusion", "exclusion": "Exclusion"}
 REQUIREMENT = {"must_have": "must have", "must_not_have": "must not have"}
 MAX_CODES = 6  # codes named in a rule's comment before "and N more"
+MAX_LABEL = 70  # characters of criteria text in a funnel label
 
 
 def oneline(text: str | None) -> str:
@@ -72,6 +75,11 @@ def rule_comment(c: CriterionOut) -> list[str]:
     return lines
 
 
+def short(text: str | None, limit: int = MAX_LABEL) -> str:
+    text = oneline(text)
+    return text if len(text) <= limit else text[: limit - 1].rstrip(" ,;:") + "…"
+
+
 def where_block(blocks: list[tuple[list[str], str]]) -> str:
     """WHERE with each condition under its comment lines, joined with AND."""
     parts = []
@@ -85,6 +93,7 @@ def where_block(blocks: list[tuple[list[str], str]]) -> str:
 def build_review(demographics: DemographicFilter, criteria: CriteriaFilter | None) -> ReviewFilter:
     age, sex = demographics.age, demographics.sex
     blocks: list[tuple[list[str], str]] = []
+    conditions: list[ReviewCondition] = []
     applied: list[ReviewItem] = []
     expert: list[ReviewItem] = []
 
@@ -92,6 +101,7 @@ def build_review(demographics: DemographicFilter, criteria: CriteriaFilter | Non
     if age.applies:
         source = f"ClinicalTrials.gov minimumAge {quoted(age.minimum.raw)}, maximumAge {quoted(age.maximum.raw)}"
         blocks.append(([f"Step 1 · Age: {age.rule}", f"Source: {source}"], age.sql))
+        conditions.append(ReviewCondition(id="AGE", label=f"Age: {age.rule}", sql=age.sql, expert=False))
         applied.append(ReviewItem(id="AGE", source_text=source, section=None, requirement=None, note=age.rule))
     if sex.applies:
         source = f"ClinicalTrials.gov sex {quoted(sex.raw)}"
@@ -102,6 +112,7 @@ def build_review(demographics: DemographicFilter, criteria: CriteriaFilter | Non
             comment.append(f"EXPERT CHECK: {note}")
             expert.append(ReviewItem(id="SEX", source_text=source, section=None, requirement=None, note=note))
         blocks.append((comment, sex.sql))
+        conditions.append(ReviewCondition(id="SEX", label=f"Sex: {sex.rule}", sql=sex.sql, expert=bool(sex.gender_based)))
         applied.append(ReviewItem(id="SEX", source_text=source, section=None, requirement=None, note=sex.rule))
 
     # Step 2: one condition per rule that claims can check
@@ -113,6 +124,8 @@ def build_review(demographics: DemographicFilter, criteria: CriteriaFilter | Non
             applied.append(ReviewItem(**item, note=oneline(c.rationale)))
             if note := expert_note(c):
                 expert.append(ReviewItem(**item, note=note))
+            conditions.append(ReviewCondition(id=c.id, label=f"{c.id} · {short(c.source_text)}", sql=c.sql,
+                                              expert=bool(expert_note(c))))
 
     not_applied = [ReviewItem(id=c.id, source_text=c.source_text, section=c.section, requirement=c.requirement,
                               note=oneline(c.reason_not_codable) or "Claims can't answer this.")
@@ -160,7 +173,7 @@ def build_review(demographics: DemographicFilter, criteria: CriteriaFilter | Non
         trial_id=demographics.trial_id, title=demographics.title, status=demographics.status, reference_date=ref,
         criteria_built=criteria is not None, model=criteria.model if criteria else None, applied=applied,
         expert_checks=expert, not_applied=not_applied, flagged=flagged, covered=covered, warnings=warnings, sql=sql,
-        query=query,
+        query=query, conditions=conditions,
     )
 
 

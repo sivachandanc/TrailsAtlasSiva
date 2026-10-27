@@ -19,7 +19,7 @@ The suite makes **no network calls and needs no keys**:
 | `FakeIcd` | `fakes_agent.py` | UMLS ICD-10-CM (`O24.11`, `E11`) |
 | `FakeRx` | `fakes_agent.py` | RxNorm: empagliflozin/dapagliflozin, class A10BK, NDCs, brand names |
 | `FakeSource` | `test_api.py` | ClinicalTrials.gov: one trial `NCT05909046`, a search, a count; can fail on demand |
-| `FakeWarehouse` | `test_api.py` | Databricks: answers the count and the list, records statements |
+| `FakeWarehouse` | `test_api.py` | Databricks: answers the count, the list and the dashboard's three statements (by their shape), records statements |
 
 `client_with(source, umls=…, llm_factory=…, warehouse=…)` in `test_api.py` gives a FastAPI
 `TestClient` with every dependency overridden and all caches cleared.
@@ -35,10 +35,12 @@ The suite makes **no network calls and needs no keys**:
 | `test_eligibility_filters.py` | step 1: inclusive limits, units, invalid ages, min > max, sex codes, gender-based warning |
 | `test_criteria_agent.py` | step 2: full scripted run (groups, code/drug checks, SQL with LPAD and RLIKE, tool backing, usage); remind and give-up paths; invalid submission sent back; refusal; quote matching; windows; partial must-have drug rules; must-not rules stay in review; prompt contents; name pattern; endpoint retries (wait used, which failures retry, limit, SDK retries off) |
 | `test_review.py` | step 3: every condition commented with its source; expert checks; rules left out listed after the query; a line break can't escape a comment; age-and-sex-only; gender-based expert check; the `;` isn't swallowed by a trailing comment |
+| `test_member_dashboard.py` | the funnel writes each condition once, in order, with `)` safe from trailing comments; demographics and geography wrap the query and select no names; funnel drops; sites placed by geoPoint, by ZIP or not at all; only US sites; nearest open site, catchment, within-radius counts (also for sites not recruiting), distance bands, unknown ZIPs; no open site → distances to every site; age bands and sex; member list distances |
+| `test_geo.py` | haversine (NYC–LA ≈ 2,445 mi), ZIP normalizing (lost leading zero, ZIP+4), Census centroid lookup, state codes → names |
 | `test_databricks.py` | Statement API client: request shape and auth, polling, cancel on timeout, failed statement message, rejected token, result chunks, missing settings |
 | `test_rxnorm.py` | products, current + historical NDCs, brand names |
 | `test_umls.py` | ICD search parameters, caching, missing and rejected key |
-| `test_api.py` | every endpoint through HTTP: sources, search, trial, demographics, criteria (stream, cache, 409, 503, errors), review before and after step 2, warehouse status (no token), count and list (query rebuilt on the server, `no-store`, truncation, not configured) |
+| `test_api.py` | every endpoint through HTTP: sources, search, trial, demographics, criteria (stream, cache, 409, 503, errors), review before and after step 2, warehouse status (no token), count and list (query rebuilt on the server, `no-store`, truncation, not configured, nearest site and distance per member), member dashboard (aggregates only, funnel, distances, not configured, unknown trial) |
 
 ## Manual checks used during development
 
@@ -57,3 +59,12 @@ These need tools outside the project, so they aren't part of `make test`.
   tools = {t.name: t for t in build_tools(UmlsClient(http, config.UMLS_API_KEY), RxNormClient(http))}
   await tools["drug_class"].ainvoke({"query": "SGLT2"})
   ```
+
+### Member dashboard, end to end
+A fake Statement API server that runs each statement in local PySpark
+(`uv run --with pyspark==3.5.3`) on synthetic members living around a real trial's sites. Point
+`DATABRICKS_HOST` at it, open `/trials/NCT06368817/members` in Chrome (Playwright), and check:
+- the funnel's last step equals the query's count;
+- light and dark themes, and 390 px width;
+- the map popup, ring toggle, state filter, member list distance filter and CSV.
+

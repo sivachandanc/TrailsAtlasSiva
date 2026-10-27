@@ -1,10 +1,14 @@
 """Settings for the web app."""
 
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()  # reads .env at the repo root
+# .env at the repo root wins over variables already set in the shell or by Windows/macOS, so the
+# app always runs with what's in the file. A blank value (KEY=) also overrides, and counts as unset.
+ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(ENV_FILE, override=True)
 
 CTGOV_BASE_URL = "https://clinicaltrials.gov/api/v2"
 HTTP_TIMEOUT_SECONDS = 60
@@ -58,3 +62,5 @@ DATABRICKS_CATALOG = os.environ.get("DATABRICKS_CATALOG") or None  # default cat
 DATABRICKS_SCHEMA = os.environ.get("DATABRICKS_SCHEMA") or None
 DATABRICKS_TIMEOUT_SECONDS = 120  # longer than this and the statement is cancelled
 MEMBER_LIST_LIMIT = int(os.environ.get("MEMBER_LIST_LIMIT") or 1000)
+# The member dashboard counts eligible members within these straight-line distances (miles) of each site
+DASHBOARD_RADII_MILES = (10, 25, 50, 100)

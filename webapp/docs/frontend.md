@@ -2,7 +2,8 @@
 
 Plain HTML, CSS and JavaScript in `webapp/frontend/`, served by FastAPI. No build step, no
 framework.
-- **Charts:** Apache ECharts 5.5.1 from jsDelivr, on the search and trial pages.
+- **Charts:** Apache ECharts 5.5.1 from jsDelivr, on the search, trial and member dashboard pages.
+- **Map:** Leaflet 1.9.4 from cdnjs, with Esri grey canvas tiles (no key), on the member dashboard.
 - **Font:** Schibsted Grotesk, from Google Fonts.
 
 Each page loads `us_tiles.js` (the state tile-map layout), `js/common.js`, then its own script.
@@ -29,6 +30,7 @@ Each page loads `us_tiles.js` (the state tile-map layout), `js/common.js`, then 
 | `/search` `search.html` | `search.js` | `GET /api/search`. Loading skeleton, KPIs, state tile map (filters the table), charts, sortable table with a text filter, rendered 100 rows per scroll (IntersectionObserver). Empty and error states |
 | `/trials/{id}` `trial.html` | `trial.js` | `GET /api/trials/{id}`. Header, banners, KPIs, summary, timeline, map, site status, parsed eligibility, arms, outcomes, conditions, contacts, sites table, link to the filter builder |
 | `/trials/{id}/eligibility` `eligibility.html` | `eligibility.js` | The 3-step filter builder (below) |
+| `/trials/{id}/members` `members.html` | `members.js` | The member dashboard: `POST /review/dashboard` on load, map, charts, site table, member list on demand. See [member-dashboard.md](member-dashboard.md) |
 | `/data-schema` `data-schema.html` | `data-schema.js` | `GET /api/member-schema`. One card per table (columns, types, key, used for) plus DDL with Copy |
 
 ## The filter builder (`eligibility.js`)
@@ -78,14 +80,25 @@ the SQL with Copy, and the JSON definition.
   - Sections from `REVIEW_GROUPS`, each item showing ID, section and requirement, the quote and
     the note.
   - The commented query, with **Download .sql** and **Copy SQL**.
-  - Earlier Databricks results are cleared, because the query changed.
-- **Run on Databricks:**
-  - Setup instructions, or the two buttons.
-  - `runOnWarehouse()` POSTs, disables both buttons while running, shows a spinner and then the
-    result or error, and fills **Show exactly what ran**.
-  - The count is shown big. The list is a table (`LIST_LABELS` headings).
-  - **Download CSV** is built in the browser by `csvField()` (quotes commas, quotes and line
-    breaks) and never touches the server.
+- **Run on Databricks:** setup instructions, or **Open member dashboard** (a link to
+  `/trials/{id}/members`).
+
+## The member dashboard (`members.js`)
+
+- `load()` POSTs `…/review/dashboard`. It shows a spinner and skeleton, or an error (a 503 links back to
+  step 3's setup instructions). **Run again** repeats it.
+- `render()` fills the header, banners and KPIs, then:
+  - `renderMap()`: Leaflet with `preferCanvas`. Panes keep rings under the sites and sites over the ZIP
+    bubbles. Colors come from the theme tokens (`bandColor()` maps distance bands to `--s6…--s1`).
+  - `renderDistance()`, `renderWho()`: ECharts.
+  - `renderFunnel()`: HTML bars.
+  - `initSites()` / `renderSites()`: the sortable site table. A row click calls `focusSite()`.
+  - `renderStates()`: `renderTileMap()` with unit "members". It drives the site table's state filter.
+  - `renderRules()`: the rule counts and the statements that ran.
+- **The member list** loads on demand. `listRows()` applies the distance filter, and `csvField()`
+  quotes CSV fields; the file is built in the browser.
+- **Theme:** a theme change swaps the tile URL (light or dark grey) and re-renders, so charts pick up the
+  new tokens.
 
 ## Styles (`styles.css`)
 
@@ -95,7 +108,8 @@ the SQL with Copy, and the JSON definition.
 - Shared parts: `.panel`, `.kpi*`, `.table-scroll`, `.code-block`, `.banner`, `.tag`, `.pill`,
   `.stepper`.
 - Step parts: `.trace` (rule cards), `.group-chip` (+ `.group-codable` / `-needs_review` /
-  `-flagged` / `-expert`), `.rv-*` (step 3).
+  `-flagged` / `-expert`), `.rv-*` (step 3), `.md-*` (member dashboard, including Leaflet popup and
+  tooltip theming).
 - Responsive: below 1100px grids get fewer columns; below 680px (phones) the stepper stacks
   vertically and panels take the full width.
 

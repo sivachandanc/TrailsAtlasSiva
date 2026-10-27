@@ -9,6 +9,8 @@
 | Code and drug lookups | UMLS, RxNav | no (24-hour in-memory cache) |
 | Member table and column **names** | Anthropic API (in the prompt) | no |
 | **Member rows** | Databricks → server → your browser only | **never**: not cached, not logged, `Cache-Control: no-store` |
+| **Member aggregates** (funnel counts, age/sex counts, members per ZIP code) | Databricks → server → your browser only | **never**, as above |
+| Map tiles | Esri (server.arcgisonline.com), from the browser | the tile requests carry the map area, never member data |
 
 The AI pharmacist never receives member data. The CSV download is built in the browser.
 
@@ -72,6 +74,8 @@ uv run fastapi run webapp/backend/main.py --port 8000   # without reload
 - Voided claims aren't excluded yet.
 - Drug duration, dose and new starts can't be checked from claims. Must-have rules filter on the
   drug and an expert checks the rest.
+- Member dashboard distances are straight lines from ZIP centroids (US Census ZCTAs); ZIPs
+  without a ZCTA count as unknown. See [member-dashboard.md](member-dashboard.md#limits).
 - Very large drug classes (e.g. insulins) put thousands of NDCs into one condition. Databricks
   handles it, but the SQL is long.
 - All caches are lost on restart. A step 2 result must be rebuilt (and paid for) after that.
